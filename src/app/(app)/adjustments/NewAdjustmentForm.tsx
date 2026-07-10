@@ -146,7 +146,7 @@ export function NewAdjustmentForm({ warehouses, items }: NewAdjustmentFormProps)
             Add line
           </Button>
         </div>
-        <p className="text-xs text-faint">Qty delta is signed — negative writes stock off.</p>
+        <p className="text-xs text-muted">Qty delta is signed — negative writes stock off.</p>
 
         <TableWrap>
           <Table>

@@ -25,7 +25,11 @@ export function DropdownMenu({
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        setOpen(false);
+        // Return focus to the trigger instead of dropping it to <body>.
+        ref.current?.querySelector<HTMLButtonElement>("button")?.focus();
+      }
     }
     document.addEventListener("mousedown", onClick);
     document.addEventListener("keydown", onKey);
@@ -67,7 +71,7 @@ export function DropdownItem({
       type="button"
       role="menuitem"
       onClick={onSelect}
-      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-surface-2 ${
+      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink/30 ${
         danger ? "text-alert" : "text-ink-soft hover:text-ink"
       }`}
     >

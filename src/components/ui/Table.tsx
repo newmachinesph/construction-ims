@@ -29,6 +29,7 @@ interface ThProps extends ThHTMLAttributes<HTMLTableCellElement> {
 export function Th({ numeric, className, children, ...rest }: ThProps) {
   return (
     <th
+      scope="col"
       className={cn(
         "px-3 py-2.5 text-xs font-medium uppercase tracking-wider text-muted",
         numeric ? "text-right" : "text-left",

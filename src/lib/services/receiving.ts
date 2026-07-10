@@ -1,5 +1,5 @@
 import "server-only";
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   goodsReceiptItems,
@@ -83,11 +83,23 @@ export async function createAndPostGrn(actor: SessionUser, input: CreateGrnInput
       const accepted = received - rejected;
       if (accepted < 0) throw new BusinessRuleError("Rejected quantity exceeds received quantity.");
 
-      const alreadyReceived = Number(poLine.qtyReceived);
-      const ordered = Number(poLine.qtyOrdered);
-      if (alreadyReceived + accepted > ordered + 1e-9) {
+      // Advance the PO line's received counter with the over-receipt cap checked
+      // inside the UPDATE's WHERE. Validating against live DB state (not the cached
+      // `poLine` snapshot) closes both the duplicate-line-in-one-request and the
+      // concurrent-GRN vectors that a stale in-memory check would let through.
+      const [advanced] = await tx
+        .update(purchaseOrderItems)
+        .set({ qtyReceived: sql`${purchaseOrderItems.qtyReceived} + ${accepted}` })
+        .where(
+          and(
+            eq(purchaseOrderItems.id, poLine.id),
+            sql`${purchaseOrderItems.qtyReceived} + ${accepted} <= ${purchaseOrderItems.qtyOrdered} + 1e-9`,
+          ),
+        )
+        .returning({ id: purchaseOrderItems.id });
+      if (!advanced) {
         throw new BusinessRuleError(
-          `Over-receipt on ${poLine.itemId}: ${ordered} ordered, ${alreadyReceived} already received, ${accepted} now.`,
+          `Over-receipt on ${poLine.itemId}: cumulative received would exceed ${poLine.qtyOrdered} ordered.`,
         );
       }
 
@@ -100,12 +112,6 @@ export async function createAndPostGrn(actor: SessionUser, input: CreateGrnInput
         unitCost: poLine.unitPrice,
         remarks: line.remarks,
       });
-
-      // Advance the PO line's received counter.
-      await tx
-        .update(purchaseOrderItems)
-        .set({ qtyReceived: sql`${purchaseOrderItems.qtyReceived} + ${accepted}` })
-        .where(eq(purchaseOrderItems.id, poLine.id));
 
       // Only accepted goods hit stock, costed at the PO price.
       if (accepted > 0) {

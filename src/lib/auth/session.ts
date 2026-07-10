@@ -11,6 +11,9 @@ export { SESSION_COOKIE };
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // one construction shift + overtime
 /** Slide the expiry when a session is used with less than this much life left. */
 const REFRESH_THRESHOLD_MS = 6 * 60 * 60 * 1000;
+/** Hard ceiling: no amount of sliding keeps a session alive past this from its
+ *  creation, so a stolen-but-continuously-used cookie still dies within a month. */
+const ABSOLUTE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export interface SessionUser {
   id: string;
@@ -79,6 +82,7 @@ export async function readSession(): Promise<SessionUser | null> {
       role: users.role,
       isActive: users.isActive,
       expiresAt: sessions.expiresAt,
+      createdAt: sessions.createdAt,
       tokenHash: sessions.tokenHash,
     })
     .from(sessions)
@@ -92,17 +96,24 @@ export async function readSession(): Promise<SessionUser | null> {
   // Constant-time confirm — belt and braces over the indexed equality above.
   if (!safeEqualHex(row.tokenHash, hashToken(token))) return null;
 
+  // Absolute cap: past ABSOLUTE_TTL_MS from creation the session is dead no matter
+  // how recently it was used — sliding renewal never defeats this ceiling.
+  const absoluteExpiry = row.createdAt.getTime() + ABSOLUTE_TTL_MS;
+  if (Date.now() > absoluteExpiry) return null;
+
   if (row.expiresAt.getTime() - Date.now() < REFRESH_THRESHOLD_MS) {
-    await slideExpiry(row.tokenHash);
+    await slideExpiry(row.tokenHash, absoluteExpiry);
   }
 
   return { id: row.userId, email: row.email, fullName: row.fullName, role: row.role };
 }
 
-async function slideExpiry(tokenHash: string): Promise<void> {
+async function slideExpiry(tokenHash: string, absoluteExpiry: number): Promise<void> {
+  // Never slide past the absolute ceiling.
+  const next = Math.min(Date.now() + SESSION_TTL_MS, absoluteExpiry);
   await db
     .update(sessions)
-    .set({ expiresAt: new Date(Date.now() + SESSION_TTL_MS) })
+    .set({ expiresAt: new Date(next) })
     .where(eq(sessions.tokenHash, tokenHash));
 }
 

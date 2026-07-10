@@ -1,5 +1,5 @@
 import "server-only";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   issuanceItems,
@@ -86,11 +86,16 @@ export async function approveRequisition(actor: SessionUser, mrId: string) {
       await reserveStock(tx, line.itemId, mr.warehouseId, line.qtyRequested);
     }
 
+    // Guard the transition with the expected status in the WHERE: if a concurrent
+    // approval already moved this MR out of SUBMITTED, this updates 0 rows and we
+    // abort — preventing a double-approve that would double-reserve stock and
+    // overwrite the separation-of-duties approver record.
     const [updated] = await tx
       .update(materialRequisitions)
       .set({ status: "APPROVED", approvedBy: actor.id, approvedAt: new Date(), updatedAt: new Date() })
-      .where(eq(materialRequisitions.id, mrId))
+      .where(and(eq(materialRequisitions.id, mrId), eq(materialRequisitions.status, "SUBMITTED")))
       .returning();
+    if (!updated) throw new ConflictError("Material requisition was already processed.");
 
     await writeAudit(tx, {
       actorId: actor.id,
@@ -115,8 +120,9 @@ export async function rejectRequisition(actor: SessionUser, mrId: string, reason
     const [updated] = await tx
       .update(materialRequisitions)
       .set({ status: "REJECTED", rejectionReason: reason, updatedAt: new Date() })
-      .where(eq(materialRequisitions.id, mrId))
+      .where(and(eq(materialRequisitions.id, mrId), eq(materialRequisitions.status, "SUBMITTED")))
       .returning();
+    if (!updated) throw new ConflictError("Material requisition was already processed.");
 
     await writeAudit(tx, {
       actorId: actor.id,
@@ -183,10 +189,24 @@ export async function createAndPostIssuance(actor: SessionUser, input: CreateIss
       if (!mrLine) throw new BusinessRuleError(`MR line ${line.mrItemId} does not belong to this MR.`);
 
       const issueQty = Number(line.quantity);
-      const remaining = Number(mrLine.qtyRequested) - Number(mrLine.qtyIssued);
-      if (issueQty > remaining + 1e-9) {
+
+      // Bump qtyIssued with the "cannot exceed requested" cap checked inside the
+      // UPDATE's WHERE. Validating against live DB state (not the cached `mrLine`)
+      // stops duplicate lines in one request from each reading qtyIssued=0 and
+      // over-issuing physical stock beyond what the requisition authorized.
+      const [advanced] = await tx
+        .update(materialRequisitionItems)
+        .set({ qtyIssued: sql`${materialRequisitionItems.qtyIssued} + ${issueQty}` })
+        .where(
+          and(
+            eq(materialRequisitionItems.id, mrLine.id),
+            sql`${materialRequisitionItems.qtyIssued} + ${issueQty} <= ${materialRequisitionItems.qtyRequested} + 1e-9`,
+          ),
+        )
+        .returning({ id: materialRequisitionItems.id });
+      if (!advanced) {
         throw new BusinessRuleError(
-          `Cannot issue ${issueQty}; only ${remaining} remaining on requisition line.`,
+          `Cannot issue ${issueQty}; exceeds the quantity remaining on the requisition line.`,
         );
       }
 
@@ -210,11 +230,6 @@ export async function createAndPostIssuance(actor: SessionUser, input: CreateIss
         refNumber: issueNumber,
         actorId: actor.id,
       });
-
-      await tx
-        .update(materialRequisitionItems)
-        .set({ qtyIssued: String(Number(mrLine.qtyIssued) + issueQty) })
-        .where(eq(materialRequisitionItems.id, mrLine.id));
     }
 
     // Recompute MR status.

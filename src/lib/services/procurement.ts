@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, notInArray } from "drizzle-orm";
 import { db } from "@/db";
 import {
   companySettings,
@@ -107,11 +107,15 @@ export async function approvePurchaseOrder(actor: SessionUser, poId: string) {
 
     assertCanApprovePo(actor.id, po); // requester != approver
 
+    // Status-guarded write: a concurrent approval that already moved this PO out
+    // of DRAFT/PENDING updates 0 rows, so we don't silently overwrite the first
+    // approver's separation-of-duties record.
     const [updated] = await tx
       .update(purchaseOrders)
       .set({ status: "APPROVED", approvedBy: actor.id, approvedAt: new Date(), updatedAt: new Date() })
-      .where(eq(purchaseOrders.id, poId))
+      .where(and(eq(purchaseOrders.id, poId), inArray(purchaseOrders.status, ["DRAFT", "PENDING_APPROVAL"])))
       .returning();
+    if (!updated) throw new ConflictError("Purchase order was already processed.");
 
     await writeAudit(tx, {
       actorId: actor.id,
@@ -138,8 +142,9 @@ export async function cancelPurchaseOrder(actor: SessionUser, poId: string, reas
     const [updated] = await tx
       .update(purchaseOrders)
       .set({ status: "CANCELLED", cancelledReason: reason, updatedAt: new Date() })
-      .where(eq(purchaseOrders.id, poId))
+      .where(and(eq(purchaseOrders.id, poId), notInArray(purchaseOrders.status, ["RECEIVED", "CANCELLED"])))
       .returning();
+    if (!updated) throw new ConflictError("Purchase order can no longer be cancelled.");
 
     await writeAudit(tx, {
       actorId: actor.id,

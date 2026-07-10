@@ -1,8 +1,11 @@
-import type {
-  InputHTMLAttributes,
-  SelectHTMLAttributes,
-  TextareaHTMLAttributes,
-  ReactNode,
+import {
+  cloneElement,
+  isValidElement,
+  type InputHTMLAttributes,
+  type SelectHTMLAttributes,
+  type TextareaHTMLAttributes,
+  type ReactElement,
+  type ReactNode,
 } from "react";
 import { cn } from "./cn";
 
@@ -23,15 +26,29 @@ interface FieldProps {
 
 /** Label + control + inline error, the standard vertical form row. */
 export function Field({ label, htmlFor, hint, error, required, className, children }: FieldProps) {
+  const hintId = hint && htmlFor ? `${htmlFor}-hint` : undefined;
+  const errorId = error && htmlFor ? `${htmlFor}-error` : undefined;
+  const describedBy = errorId ?? hintId;
+
+  // Link the hint/error to the control so a screen reader announces them, and
+  // flag the control invalid — Field always wraps exactly one input.
+  const control =
+    isValidElement(children) && (describedBy || error)
+      ? cloneElement(children as ReactElement<{ "aria-describedby"?: string; "aria-invalid"?: boolean }>, {
+          "aria-describedby": describedBy,
+          "aria-invalid": error ? true : undefined,
+        })
+      : children;
+
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
       <label htmlFor={htmlFor} className="text-xs font-medium uppercase tracking-wide text-ink-soft">
         {label}
         {required ? <span className="ml-0.5 text-alert">*</span> : null}
       </label>
-      {children}
-      {hint && !error ? <p className="text-xs text-muted">{hint}</p> : null}
-      {error ? <p className="text-xs text-alert">{error}</p> : null}
+      {control}
+      {hint && !error ? <p id={hintId} className="text-xs text-muted">{hint}</p> : null}
+      {error ? <p id={errorId} className="text-xs text-alert">{error}</p> : null}
     </div>
   );
 }

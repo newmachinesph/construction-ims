@@ -3,11 +3,12 @@ import { db } from "@/db";
 import { categories } from "@/db/schema";
 import { requirePermissionPage, can } from "@/lib/auth/dal";
 import { listStock, lowStockItems, recentMovements } from "@/lib/services/stock";
-import { formatManila, formatPHP, formatQty, UOM_LABELS } from "@/lib/ph";
+import { formatManila, formatPHP, formatQty, manilaToday, UOM_LABELS } from "@/lib/ph";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatTile } from "@/components/ui/StatTile";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Table, TableWrap, THead, TBody, Th, Tr, Td, EmptyRow } from "@/components/ui/Table";
+import { ExportCsvButton } from "@/components/ui/ExportCsvButton";
 import { PrintButton } from "./PrintButton";
 
 function uomLabel(uom: string): string {
@@ -25,15 +26,19 @@ export default async function ReportsPage() {
   await requirePermissionPage("report:read");
   const canCost = await can("report:cost");
 
-  const [lowStock, movements] = await Promise.all([lowStockItems(), recentMovements(100)]);
+  // One parallel batch — the cost-only queries are gated by canCost but must not
+  // wait for the low-stock/movements pair to resolve first.
+  const [lowStock, movements, stockRows, categoryRows] = await Promise.all([
+    lowStockItems(),
+    recentMovements(100),
+    canCost ? listStock() : Promise.resolve([]),
+    canCost
+      ? db.select({ id: categories.id, name: categories.name }).from(categories).orderBy(asc(categories.name))
+      : Promise.resolve([]),
+  ]);
 
   let valuation: CategoryValuation[] = [];
   if (canCost) {
-    const [stockRows, categoryRows] = await Promise.all([
-      listStock(),
-      db.select({ id: categories.id, name: categories.name }).from(categories).orderBy(asc(categories.name)),
-    ]);
-
     const byCategory = new Map<string, { items: Set<string>; value: number }>();
     for (const row of stockRows) {
       const entry = byCategory.get(row.categoryId) ?? { items: new Set<string>(), value: 0 };
@@ -56,6 +61,32 @@ export default async function ReportsPage() {
   const grandTotalValue = valuation.reduce((sum, r) => sum + r.totalValue, 0);
   const totalSkus = valuation.reduce((sum, r) => sum + r.itemCount, 0);
 
+  // Flat rows for CSV export — raw numbers (no currency symbols/commas) so they
+  // land as numbers in Excel. Data is already computed; the buttons just serialize it.
+  const valuationCsv = valuation.map((r) => ({
+    category: r.name,
+    items: r.itemCount,
+    value: r.totalValue.toFixed(2),
+  }));
+  const lowStockCsv = lowStock.map((r) => ({
+    sku: r.sku,
+    item: r.name,
+    onHand: String(r.totalOnHand),
+    uom: uomLabel(r.uom),
+    reorderPoint: String(r.reorderPoint),
+    suggestedQty: String(r.reorderQty),
+  }));
+  const movementsCsv = movements.map((m) => ({
+    when: formatManila(m.createdAt),
+    type: m.type,
+    sku: m.sku,
+    item: m.itemName,
+    warehouse: m.warehouseName,
+    qty: String(m.quantity),
+    uom: uomLabel(m.uom),
+    balance: String(m.balanceAfter),
+  }));
+
   return (
     <>
       <style>{"@media print{ aside,header{display:none!important} main{padding:0!important} }"}</style>
@@ -65,9 +96,22 @@ export default async function ReportsPage() {
       </PageHeader>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
-          Inventory valuation by category
-        </h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
+            Inventory valuation by category
+          </h2>
+          {canCost ? (
+            <ExportCsvButton
+              filename={`valuation-${manilaToday()}`}
+              rows={valuationCsv}
+              columns={[
+                { key: "category", label: "Category" },
+                { key: "items", label: "# items" },
+                { key: "value", label: "Total value (PHP)" },
+              ]}
+            />
+          ) : null}
+        </div>
         {!canCost ? (
           <p className="text-sm text-muted">Cost figures are restricted for your role.</p>
         ) : (
@@ -110,7 +154,21 @@ export default async function ReportsPage() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">Low stock</h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">Low stock</h2>
+          <ExportCsvButton
+            filename={`low-stock-${manilaToday()}`}
+            rows={lowStockCsv}
+            columns={[
+              { key: "sku", label: "SKU" },
+              { key: "item", label: "Item" },
+              { key: "onHand", label: "On hand" },
+              { key: "uom", label: "UoM" },
+              { key: "reorderPoint", label: "Reorder point" },
+              { key: "suggestedQty", label: "Suggested qty" },
+            ]}
+          />
+        </div>
         <TableWrap>
           <Table>
             <THead>
@@ -152,7 +210,23 @@ export default async function ReportsPage() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">Movement ledger</h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">Movement ledger</h2>
+          <ExportCsvButton
+            filename={`movements-${manilaToday()}`}
+            rows={movementsCsv}
+            columns={[
+              { key: "when", label: "When" },
+              { key: "type", label: "Type" },
+              { key: "sku", label: "SKU" },
+              { key: "item", label: "Item" },
+              { key: "warehouse", label: "Warehouse" },
+              { key: "qty", label: "Qty" },
+              { key: "uom", label: "UoM" },
+              { key: "balance", label: "Balance" },
+            ]}
+          />
+        </div>
         <TableWrap>
           <Table>
             <THead>
