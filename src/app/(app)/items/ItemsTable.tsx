@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { Table, TableWrap, THead, TBody, Th, Tr, Td, EmptyRow } from "@/components/ui/Table";
 import { rowMatches } from "@/components/ui/cn";
@@ -50,7 +51,11 @@ export function ItemsTable({ rows }: { rows: ItemRow[] }) {
             ) : (
               filtered.map((r) => (
                 <Tr key={r.id}>
-                  <Td className="tabular text-ink-soft">{r.sku}</Td>
+                  <Td className="tabular">
+                    <Link href={`/items/${r.id}`} className="text-ink-soft underline-offset-2 hover:text-ink hover:underline">
+                      {r.sku}
+                    </Link>
+                  </Td>
                   <Td>
                     <span className="text-ink">{r.name}</span>
                     {r.isWeatherSensitive ? (
