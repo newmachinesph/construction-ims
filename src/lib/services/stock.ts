@@ -343,3 +343,12 @@ export async function listAdjustments(limit = 50) {
     with: { warehouse: true },
   });
 }
+
+export async function getAdjustment(id: string) {
+  const adj = await db.query.stockAdjustments.findFirst({
+    where: eq(stockAdjustments.id, id),
+    with: { warehouse: true, lines: { with: { item: true } } },
+  });
+  if (!adj) throw new NotFoundError("Stock adjustment");
+  return adj;
+}

@@ -23,6 +23,7 @@ export interface SupplierRow {
   email: string | null;
   phone: string | null;
   address: string | null;
+  isActive: boolean;
 }
 
 export function SuppliersTable({ rows, canWrite }: { rows: SupplierRow[]; canWrite: boolean }) {

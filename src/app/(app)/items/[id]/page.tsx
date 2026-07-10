@@ -1,9 +1,10 @@
 import { notFound } from "next/navigation";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { categories, items } from "@/db/schema";
 import { can, requirePermissionPage } from "@/lib/auth/dal";
 import { PhotoManager } from "@/components/PhotoManager";
+import { ItemEditForm } from "../ItemEditForm";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { formatPHP, formatQty, UOM_LABELS } from "@/lib/ph";
 
@@ -27,6 +28,8 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
       vatClass: items.vatClass,
       dpwhPayItem: items.dpwhPayItem,
       isWeatherSensitive: items.isWeatherSensitive,
+      isActive: items.isActive,
+      categoryId: items.categoryId,
       categoryName: categories.name,
     })
     .from(items)
@@ -36,6 +39,12 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
 
   if (!row) notFound();
   const canWrite = await can("item:write");
+  const categoryOptions = canWrite
+    ? await db
+        .select({ id: categories.id, name: categories.name })
+        .from(categories)
+        .orderBy(asc(categories.name))
+    : [];
 
   const facts: [string, string][] = [
     ["Category", row.categoryName],
@@ -51,6 +60,26 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
   return (
     <>
       <PageHeader title={row.name} description={`SKU ${row.sku}`} />
+
+      {canWrite ? (
+        <ItemEditForm
+          item={{
+            id: row.id,
+            sku: row.sku,
+            name: row.name,
+            categoryId: row.categoryId,
+            uom: row.uom,
+            vatClass: row.vatClass,
+            standardCost: row.standardCost,
+            reorderPoint: row.reorderPoint,
+            reorderQty: row.reorderQty,
+            dpwhPayItem: row.dpwhPayItem,
+            isWeatherSensitive: row.isWeatherSensitive,
+            isActive: row.isActive,
+          }}
+          categories={categoryOptions}
+        />
+      ) : null}
 
       <section className="grid grid-cols-1 gap-x-6 gap-y-4 rounded-card border border-line bg-surface p-5 sm:grid-cols-2 lg:grid-cols-4">
         {facts.map(([label, value]) => (

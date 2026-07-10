@@ -39,7 +39,7 @@ export function ItemForm({ categories }: { categories: CategoryOption[] }) {
     e.preventDefault();
     setError(null);
     setPending(true);
-    const result = await api.post("/api/items", {
+    const result = await api.post<{ id: string }>("/api/items", {
       sku: form.sku.trim(),
       name: form.name.trim(),
       categoryId: form.categoryId,
@@ -55,9 +55,11 @@ export function ItemForm({ categories }: { categories: CategoryOption[] }) {
       setError(result.error);
       return;
     }
+    // Go straight to the new item's page so photos can be added and any field
+    // corrected right after creation.
     setForm({ ...EMPTY_FORM, categoryId: categories[0]?.id ?? "" });
     setOpen(false);
-    router.refresh();
+    router.push(`/items/${result.data.id}`);
   }
 
   return (
