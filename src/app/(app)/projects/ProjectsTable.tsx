@@ -68,6 +68,8 @@ export function ProjectsTable({ rows, canWrite }: { rows: ProjectRow[]; canWrite
                         <Button
                           variant="ghost"
                           size="sm"
+                          aria-label={isEditing ? "Cancel edit" : `Edit ${r.name}`}
+                          aria-expanded={isEditing}
                           onClick={() => setEditingId(isEditing ? null : r.id)}
                         >
                           {isEditing ? <X className="size-4" /> : <Pencil className="size-4" />}

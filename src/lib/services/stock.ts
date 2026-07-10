@@ -12,7 +12,7 @@ import {
   warehouses,
 } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth/session";
-import { assertCanApproveAdjustment } from "@/lib/rbac";
+import { assertCanApproveAdjustment, assertSeparationOfDuties } from "@/lib/rbac";
 import { BusinessRuleError, ConflictError, NotFoundError } from "@/lib/errors";
 import { applyMovement, nextDocumentNumber, writeAudit } from "./ledger";
 
@@ -99,15 +99,24 @@ export async function receiveTransfer(actor: SessionUser, transferId: string) {
       throw new ConflictError(`Cannot receive a transfer in status ${transfer.status}.`);
     }
 
+    // The person who dispatched the goods cannot also sign for receiving them —
+    // otherwise one bodegero round-trips stock between warehouses unwitnessed.
+    assertSeparationOfDuties(
+      actor.id,
+      [transfer.createdBy],
+      "You cannot receive a stock transfer you dispatched.",
+    );
+
     for (const line of transfer.lines) {
       await applyMovement(tx, {
         itemId: line.itemId,
         warehouseId: transfer.toWarehouseId,
         type: "TRANSFER_IN",
         quantity: line.quantity,
-        // Cost carries with the goods; use source average via the movement's
-        // own averaging on the destination side.
-        unitCost: await sourceAvgCost(tx, line.itemId, transfer.fromWarehouseId),
+        // Value the goods at the cost locked in when they left the source
+        // (the TRANSFER_OUT movement), not the source's live average — which may
+        // have drifted from later receipts while the truck was on the road.
+        unitCost: await dispatchedUnitCost(tx, transfer.id, line.itemId),
         refType: "TRANSFER",
         refId: transfer.id,
         refNumber: transfer.transferNumber,
@@ -115,11 +124,15 @@ export async function receiveTransfer(actor: SessionUser, transferId: string) {
       });
     }
 
+    // Status-guarded write: a concurrent receive that already flipped this out of
+    // IN_TRANSIT updates 0 rows here, aborting the transaction and rolling back the
+    // duplicate TRANSFER_IN movements above.
     const [updated] = await tx
       .update(transfers)
       .set({ status: "RECEIVED", receivedAt: new Date(), receivedBy: actor.id, updatedAt: new Date() })
-      .where(eq(transfers.id, transferId))
+      .where(and(eq(transfers.id, transferId), eq(transfers.status, "IN_TRANSIT")))
       .returning();
+    if (!updated) throw new ConflictError("Transfer was already received.");
 
     await writeAudit(tx, {
       actorId: actor.id,
@@ -134,16 +147,24 @@ export async function receiveTransfer(actor: SessionUser, transferId: string) {
   });
 }
 
-async function sourceAvgCost(
+/** Cost recorded on this transfer's TRANSFER_OUT movement — the price the goods
+ *  actually left the source warehouse at, captured at dispatch time. */
+async function dispatchedUnitCost(
   tx: Parameters<typeof applyMovement>[0],
+  transferId: string,
   itemId: string,
-  warehouseId: string,
 ): Promise<string> {
   const [row] = await tx
-    .select({ avg: stockLevels.avgUnitCost })
-    .from(stockLevels)
-    .where(and(eq(stockLevels.itemId, itemId), eq(stockLevels.warehouseId, warehouseId)));
-  return row?.avg ?? "0";
+    .select({ unitCost: stockMovements.unitCost })
+    .from(stockMovements)
+    .where(
+      and(
+        eq(stockMovements.refId, transferId),
+        eq(stockMovements.itemId, itemId),
+        eq(stockMovements.type, "TRANSFER_OUT"),
+      ),
+    );
+  return row?.unitCost ?? "0";
 }
 
 /* ---------------------------- adjustments --------------------------- */
@@ -234,6 +255,9 @@ export async function approveAndPostAdjustment(actor: SessionUser, adjId: string
       });
     }
 
+    // Status-guarded write: two concurrent approvals can't both post the same
+    // DRAFT adjustment (which would apply the delta to stock twice) — the second
+    // matches 0 rows and rolls back its duplicate movements.
     const [updated] = await tx
       .update(stockAdjustments)
       .set({
@@ -243,8 +267,9 @@ export async function approveAndPostAdjustment(actor: SessionUser, adjId: string
         postedAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(eq(stockAdjustments.id, adjId))
+      .where(and(eq(stockAdjustments.id, adjId), eq(stockAdjustments.status, "DRAFT")))
       .returning();
+    if (!updated) throw new ConflictError("Stock adjustment was already posted.");
 
     await writeAudit(tx, {
       actorId: actor.id,

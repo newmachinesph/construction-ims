@@ -53,7 +53,7 @@ export const POST = handler(async (req) => {
 
   if (!(file instanceof File)) throw new ValidationError("Missing file.");
   const check = validateUpload(file.type, file.size);
-  if (!check.ok) throw new ValidationError(check.error!);
+  if (!check.ok) throw new ValidationError(check.error);
 
   const bytes = new Uint8Array(await file.arrayBuffer());
   const objectKey = buildObjectKey(entity, entityId, file.type);

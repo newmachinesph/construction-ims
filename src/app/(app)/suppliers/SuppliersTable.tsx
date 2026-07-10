@@ -78,6 +78,8 @@ export function SuppliersTable({ rows, canWrite }: { rows: SupplierRow[]; canWri
                         <Button
                           variant="ghost"
                           size="sm"
+                          aria-label={isEditing ? "Cancel edit" : `Edit ${r.name}`}
+                          aria-expanded={isEditing}
                           onClick={() => setEditingId(isEditing ? null : r.id)}
                         >
                           {isEditing ? <X className="size-4" /> : <Pencil className="size-4" />}

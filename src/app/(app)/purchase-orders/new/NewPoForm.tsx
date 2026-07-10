@@ -297,7 +297,7 @@ export function NewPoForm({ suppliers, warehouses, projects, items }: NewPoFormP
             <span className="font-medium text-ink">Total</span>
             <span className="tabular text-lg font-semibold text-ink">{formatPHP(totals.total)}</span>
           </div>
-          <p className="text-xs text-faint">EWT is computed on submit from supplier + company tax profile.</p>
+          <p className="text-xs text-muted">EWT is computed on submit from supplier + company tax profile.</p>
         </div>
       </section>
 

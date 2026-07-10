@@ -27,10 +27,7 @@ export function buildObjectKey(entity: string, entityId: string, contentType: st
   return `${safeEntity}/${safeId}/${randomUUID()}.${extForType(contentType)}`;
 }
 
-export interface UploadCheck {
-  ok: boolean;
-  error?: string;
-}
+export type UploadCheck = { ok: true } | { ok: false; error: string };
 
 export function validateUpload(contentType: string, sizeBytes: number): UploadCheck {
   if (!ALLOWED_IMAGE_TYPES.includes(contentType)) {

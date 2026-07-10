@@ -55,6 +55,9 @@ export async function login(_prev: LoginState, formData: FormData): Promise<Logi
   }
 
   if (user.lockedUntil && user.lockedUntil > new Date()) {
+    // Spend the same hashing time as a real verify so the locked path isn't
+    // distinguishable by response latency (timing-based account enumeration).
+    await fakeVerify(password);
     return { error: "Account temporarily locked. Try again later." };
   }
   if (!user.isActive) {

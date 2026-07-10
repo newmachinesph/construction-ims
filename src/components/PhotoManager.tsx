@@ -1,6 +1,8 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ImagePlus, Trash2, X } from "lucide-react";
+import { api } from "@/components/ui/api";
 
 interface Attachment {
   id: string;
@@ -14,40 +16,40 @@ interface Props {
   entity: "item" | "goods_receipt";
   entityId: string;
   canWrite?: boolean;
-  /** Compact single-thumbnail mode for forms; default is a gallery grid. */
   title?: string;
+}
+
+async function fetchAttachments(entity: string, entityId: string): Promise<Attachment[]> {
+  const res = await fetch(`/api/attachments?entity=${entity}&entityId=${entityId}`);
+  const body = await res.json().catch(() => null);
+  if (!res.ok || !body?.ok) throw new Error(body?.error ?? "Failed to load photos.");
+  return body.data as Attachment[];
 }
 
 /**
  * Lists, uploads and deletes photos for a record. Talks to /api/attachments,
  * which streams bytes back through an auth-gated route (images are private).
+ * The list is cached by React Query and invalidated after each mutation, so
+ * navigating away and back doesn't re-flash a loader.
  */
 export function PhotoManager({ entity, entityId, canWrite = false, title = "Photos" }: Props) {
-  const [items, setItems] = useState<Attachment[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const queryKey = ["attachments", entity, entityId];
+  const { data: items = [], isLoading, isError, error } = useQuery({
+    queryKey,
+    queryFn: () => fetchAttachments(entity, entityId),
+  });
+
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // No synchronous setState here: `loading` starts true, so the mount effect
-  // that calls this must not flip state before its first await (react-hooks
-  // set-state-in-effect). Refetches after upload/delete just skip the spinner.
-  const load = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/attachments?entity=${entity}&entityId=${entityId}`);
-      const body = await res.json();
-      if (body.ok) setItems(body.data);
-    } finally {
-      setLoading(false);
-    }
-  }, [entity, entityId]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  function invalidate() {
+    return queryClient.invalidateQueries({ queryKey });
+  }
 
   async function upload(file: File) {
-    setError(null);
+    setMutationError(null);
     setBusy(true);
     try {
       const fd = new FormData();
@@ -55,14 +57,14 @@ export function PhotoManager({ entity, entityId, canWrite = false, title = "Phot
       fd.set("entityId", entityId);
       fd.set("file", file);
       const res = await fetch("/api/attachments", { method: "POST", body: fd });
-      const body = await res.json();
-      if (!body.ok) {
-        setError(body.error ?? "Upload failed.");
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body?.ok) {
+        setMutationError(body?.error ?? "Upload failed.");
         return;
       }
-      await load();
+      await invalidate();
     } catch {
-      setError("Upload failed.");
+      setMutationError("Upload failed. Check your connection and try again.");
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
@@ -70,14 +72,21 @@ export function PhotoManager({ entity, entityId, canWrite = false, title = "Phot
   }
 
   async function remove(id: string) {
+    setMutationError(null);
     setBusy(true);
     try {
-      await fetch(`/api/attachments/${id}`, { method: "DELETE" });
-      setItems((prev) => prev.filter((a) => a.id !== id));
+      const result = await api.del(`/api/attachments/${id}`);
+      if (!result.ok) {
+        setMutationError(result.error);
+        return;
+      }
+      await invalidate();
     } finally {
       setBusy(false);
     }
   }
+
+  const displayError = mutationError ?? (isError ? (error instanceof Error ? error.message : "Failed to load photos.") : null);
 
   return (
     <section className="rounded-[var(--radius-card)] border border-line bg-surface p-4">
@@ -99,7 +108,7 @@ export function PhotoManager({ entity, entityId, canWrite = false, title = "Phot
               type="button"
               disabled={busy}
               onClick={() => inputRef.current?.click()}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-line-strong bg-surface px-2.5 text-xs text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink disabled:opacity-50"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-line-strong bg-surface px-2.5 text-xs text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 disabled:opacity-50"
             >
               <ImagePlus className="size-3.5" />
               {busy ? "Uploading…" : "Add photo"}
@@ -108,13 +117,13 @@ export function PhotoManager({ entity, entityId, canWrite = false, title = "Phot
         )}
       </div>
 
-      {error && (
-        <p className="mb-2 flex items-center gap-1 text-xs text-alert">
-          <X className="size-3.5" /> {error}
+      {displayError && (
+        <p className="mb-2 flex items-center gap-1 text-xs text-alert" role="alert">
+          <X className="size-3.5" /> {displayError}
         </p>
       )}
 
-      {loading ? (
+      {isLoading ? (
         <p className="text-xs text-muted">Loading…</p>
       ) : items.length === 0 ? (
         <p className="text-xs text-muted">No photos yet.</p>
@@ -129,8 +138,8 @@ export function PhotoManager({ entity, entityId, canWrite = false, title = "Phot
                   type="button"
                   disabled={busy}
                   onClick={() => void remove(a.id)}
-                  aria-label="Delete photo"
-                  className="absolute right-1 top-1 hidden size-7 items-center justify-center rounded-md bg-ink/80 text-surface transition-colors hover:bg-ink group-hover:flex"
+                  aria-label={`Delete photo ${a.originalName ?? ""}`.trim()}
+                  className="absolute right-1 top-1 hidden size-7 items-center justify-center rounded-md bg-ink/80 text-surface transition-colors hover:bg-ink focus-visible:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paper group-hover:flex group-focus-within:flex"
                 >
                   <Trash2 className="size-3.5" />
                 </button>

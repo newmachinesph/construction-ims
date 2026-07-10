@@ -114,7 +114,12 @@ export async function applyMovement(tx: Tx, input: MovementInput): Promise<{ bal
   }
 
   const isInbound = delta > 0;
-  const movementUnitCost = isInbound ? (input.unitCost ?? "0") : current.avgUnitCost;
+  // A positive ADJUSTMENT (found surplus on a physical count) carries no purchase
+  // price, so it must be cost-neutral — value it at the current average, never ₱0,
+  // which would silently dilute the moving-average cost of every remaining unit.
+  const movementUnitCost = isInbound
+    ? (input.unitCost ?? (input.type === "ADJUSTMENT" ? current.avgUnitCost : "0"))
+    : current.avgUnitCost;
 
   const newAvgCost = isInbound
     ? nextAverageCost(current.qtyOnHand, current.avgUnitCost, String(delta), movementUnitCost)
