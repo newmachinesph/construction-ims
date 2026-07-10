@@ -1,0 +1,20 @@
+CREATE INDEX "grn_items_item_idx" ON "goods_receipt_items" USING btree ("item_id");--> statement-breakpoint
+CREATE INDEX "grn_items_po_item_idx" ON "goods_receipt_items" USING btree ("po_item_id");--> statement-breakpoint
+CREATE INDEX "grn_po_idx" ON "goods_receipts" USING btree ("po_id");--> statement-breakpoint
+CREATE INDEX "grn_warehouse_idx" ON "goods_receipts" USING btree ("warehouse_id");--> statement-breakpoint
+CREATE INDEX "issuance_items_item_idx" ON "issuance_items" USING btree ("item_id");--> statement-breakpoint
+CREATE INDEX "issuance_items_mr_item_idx" ON "issuance_items" USING btree ("mr_item_id");--> statement-breakpoint
+CREATE INDEX "issuances_mr_idx" ON "issuances" USING btree ("mr_id");--> statement-breakpoint
+CREATE INDEX "issuances_project_idx" ON "issuances" USING btree ("project_id");--> statement-breakpoint
+CREATE INDEX "mr_items_item_idx" ON "material_requisition_items" USING btree ("item_id");--> statement-breakpoint
+CREATE INDEX "mr_warehouse_idx" ON "material_requisitions" USING btree ("warehouse_id");--> statement-breakpoint
+CREATE INDEX "po_items_item_idx" ON "purchase_order_items" USING btree ("item_id");--> statement-breakpoint
+CREATE INDEX "po_warehouse_idx" ON "purchase_orders" USING btree ("warehouse_id");--> statement-breakpoint
+CREATE INDEX "po_project_idx" ON "purchase_orders" USING btree ("project_id");--> statement-breakpoint
+CREATE INDEX "adj_items_item_idx" ON "stock_adjustment_items" USING btree ("item_id");--> statement-breakpoint
+CREATE INDEX "stock_adj_warehouse_idx" ON "stock_adjustments" USING btree ("warehouse_id");--> statement-breakpoint
+CREATE INDEX "movements_project_idx" ON "stock_movements" USING btree ("project_id");--> statement-breakpoint
+CREATE INDEX "transfer_items_item_idx" ON "transfer_items" USING btree ("item_id");--> statement-breakpoint
+CREATE INDEX "transfers_from_wh_idx" ON "transfers" USING btree ("from_warehouse_id");--> statement-breakpoint
+CREATE INDEX "transfers_to_wh_idx" ON "transfers" USING btree ("to_warehouse_id");--> statement-breakpoint
+CREATE INDEX "warehouses_project_idx" ON "warehouses" USING btree ("project_id");

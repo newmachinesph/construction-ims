@@ -199,16 +199,20 @@ export const projects = pgTable("projects", {
   ...timestamps,
 });
 
-export const warehouses = pgTable("warehouses", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  code: varchar("code", { length: 32 }).notNull().unique(),
-  name: varchar("name", { length: 160 }).notNull(),
-  kind: warehouseKindEnum("kind").notNull().default("MAIN_WAREHOUSE"),
-  projectId: uuid("project_id").references(() => projects.id, { onDelete: "restrict" }),
-  address: varchar("address", { length: 240 }),
-  isActive: boolean("is_active").notNull().default(true),
-  ...timestamps,
-});
+export const warehouses = pgTable(
+  "warehouses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    code: varchar("code", { length: 32 }).notNull().unique(),
+    name: varchar("name", { length: 160 }).notNull(),
+    kind: warehouseKindEnum("kind").notNull().default("MAIN_WAREHOUSE"),
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "restrict" }),
+    address: varchar("address", { length: 240 }),
+    isActive: boolean("is_active").notNull().default(true),
+    ...timestamps,
+  },
+  (t) => [index("warehouses_project_idx").on(t.projectId)],
+);
 
 export const suppliers = pgTable("suppliers", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -354,6 +358,7 @@ export const stockMovements = pgTable(
     index("movements_item_wh_idx").on(t.itemId, t.warehouseId),
     index("movements_created_idx").on(t.createdAt),
     index("movements_ref_idx").on(t.refType, t.refId),
+    index("movements_project_idx").on(t.projectId),
   ],
 );
 
@@ -392,7 +397,12 @@ export const purchaseOrders = pgTable(
     cancelledReason: text("cancelled_reason"),
     ...timestamps,
   },
-  (t) => [index("po_status_idx").on(t.status), index("po_supplier_idx").on(t.supplierId)],
+  (t) => [
+    index("po_status_idx").on(t.status),
+    index("po_supplier_idx").on(t.supplierId),
+    index("po_warehouse_idx").on(t.warehouseId),
+    index("po_project_idx").on(t.projectId),
+  ],
 );
 
 export const purchaseOrderItems = pgTable(
@@ -412,7 +422,7 @@ export const purchaseOrderItems = pgTable(
     vatClass: vatClassEnum("vat_class").notNull().default("VATABLE"),
     lineTotal: money("line_total").notNull(),
   },
-  (t) => [index("po_items_po_idx").on(t.poId)],
+  (t) => [index("po_items_po_idx").on(t.poId), index("po_items_item_idx").on(t.itemId)],
 );
 
 /* ------------------- goods receipt (GRN / vs supplier DR) ----------- */
@@ -442,7 +452,7 @@ export const goodsReceipts = pgTable("goods_receipts", {
     .references(() => users.id, { onDelete: "restrict" }),
   postedAt: timestamp("posted_at", { withTimezone: true }),
   ...timestamps,
-});
+}, (t) => [index("grn_po_idx").on(t.poId), index("grn_warehouse_idx").on(t.warehouseId)]);
 
 export const goodsReceiptItems = pgTable(
   "goods_receipt_items",
@@ -463,7 +473,11 @@ export const goodsReceiptItems = pgTable(
     unitCost: money("unit_cost").notNull(),
     remarks: text("remarks"),
   },
-  (t) => [index("grn_items_grn_idx").on(t.grnId)],
+  (t) => [
+    index("grn_items_grn_idx").on(t.grnId),
+    index("grn_items_item_idx").on(t.itemId),
+    index("grn_items_po_item_idx").on(t.poItemId),
+  ],
 );
 
 /* --------------------- material requisition (MR) -------------------- */
@@ -491,7 +505,11 @@ export const materialRequisitions = pgTable(
     rejectionReason: text("rejection_reason"),
     ...timestamps,
   },
-  (t) => [index("mr_status_idx").on(t.status), index("mr_project_idx").on(t.projectId)],
+  (t) => [
+    index("mr_status_idx").on(t.status),
+    index("mr_project_idx").on(t.projectId),
+    index("mr_warehouse_idx").on(t.warehouseId),
+  ],
 );
 
 export const materialRequisitionItems = pgTable(
@@ -507,7 +525,7 @@ export const materialRequisitionItems = pgTable(
     qtyRequested: qty("qty_requested").notNull(),
     qtyIssued: qty("qty_issued").notNull().default("0"),
   },
-  (t) => [index("mr_items_mr_idx").on(t.mrId)],
+  (t) => [index("mr_items_mr_idx").on(t.mrId), index("mr_items_item_idx").on(t.itemId)],
 );
 
 /* ---------------- issuance (Material Issuance Slip) ----------------- */
@@ -532,7 +550,7 @@ export const issuances = pgTable("issuances", {
     .references(() => users.id, { onDelete: "restrict" }),
   postedAt: timestamp("posted_at", { withTimezone: true }),
   ...timestamps,
-});
+}, (t) => [index("issuances_mr_idx").on(t.mrId), index("issuances_project_idx").on(t.projectId)]);
 
 export const issuanceItems = pgTable(
   "issuance_items",
@@ -549,7 +567,11 @@ export const issuanceItems = pgTable(
       .references(() => items.id, { onDelete: "restrict" }),
     quantity: qty("quantity").notNull(),
   },
-  (t) => [index("issuance_items_issuance_idx").on(t.issuanceId)],
+  (t) => [
+    index("issuance_items_issuance_idx").on(t.issuanceId),
+    index("issuance_items_item_idx").on(t.itemId),
+    index("issuance_items_mr_item_idx").on(t.mrItemId),
+  ],
 );
 
 /* ----------------------------- transfers ---------------------------- */
@@ -574,7 +596,10 @@ export const transfers = pgTable("transfers", {
     .references(() => users.id, { onDelete: "restrict" }),
   receivedBy: uuid("received_by").references(() => users.id, { onDelete: "set null" }),
   ...timestamps,
-});
+}, (t) => [
+  index("transfers_from_wh_idx").on(t.fromWarehouseId),
+  index("transfers_to_wh_idx").on(t.toWarehouseId),
+]);
 
 export const transferItems = pgTable(
   "transfer_items",
@@ -588,7 +613,10 @@ export const transferItems = pgTable(
       .references(() => items.id, { onDelete: "restrict" }),
     quantity: qty("quantity").notNull(),
   },
-  (t) => [index("transfer_items_transfer_idx").on(t.transferId)],
+  (t) => [
+    index("transfer_items_transfer_idx").on(t.transferId),
+    index("transfer_items_item_idx").on(t.itemId),
+  ],
 );
 
 /* ---------------------------- adjustments --------------------------- */
@@ -610,7 +638,7 @@ export const stockAdjustments = pgTable("stock_adjustments", {
   approvedAt: timestamp("approved_at", { withTimezone: true }),
   postedAt: timestamp("posted_at", { withTimezone: true }),
   ...timestamps,
-});
+}, (t) => [index("stock_adj_warehouse_idx").on(t.warehouseId)]);
 
 export const stockAdjustmentItems = pgTable(
   "stock_adjustment_items",
@@ -626,7 +654,10 @@ export const stockAdjustmentItems = pgTable(
     qtyDelta: qty("qty_delta").notNull(),
     remarks: text("remarks"),
   },
-  (t) => [index("adj_items_adj_idx").on(t.adjustmentId)],
+  (t) => [
+    index("adj_items_adj_idx").on(t.adjustmentId),
+    index("adj_items_item_idx").on(t.itemId),
+  ],
 );
 
 /* ---------------------------- attachments --------------------------- */
