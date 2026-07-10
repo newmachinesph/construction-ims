@@ -1,10 +1,13 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select, FormError } from "@/components/ui/Field";
 import { api } from "@/components/ui/api";
+import { useToast } from "@/lib/store/toast";
 import { UOM_LABELS } from "@/lib/ph";
 
 interface CategoryOption {
@@ -27,6 +30,19 @@ export interface EditableItem {
   isActive: boolean;
 }
 
+interface EditForm {
+  name: string;
+  categoryId: string;
+  uom: string;
+  vatClass: string;
+  standardCost: string;
+  reorderPoint: string;
+  reorderQty: string;
+  dpwhPayItem: string;
+  isWeatherSensitive: boolean;
+  isActive: boolean;
+}
+
 const VAT_CLASSES = ["VATABLE", "ZERO_RATED", "EXEMPT"] as const;
 const UOM_KEYS = Object.keys(UOM_LABELS) as (keyof typeof UOM_LABELS)[];
 
@@ -44,35 +60,47 @@ export function ItemEditForm({
   categories: CategoryOption[];
 }) {
   const router = useRouter();
+  const toast = useToast();
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState(item);
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
+  const {
+    register,
+    handleSubmit,
+    formState: { isSubmitting },
+  } = useForm<EditForm>({
+    defaultValues: {
+      name: item.name,
+      categoryId: item.categoryId,
+      uom: item.uom,
+      vatClass: item.vatClass,
+      standardCost: item.standardCost,
+      reorderPoint: item.reorderPoint,
+      reorderQty: item.reorderQty,
+      dpwhPayItem: item.dpwhPayItem ?? "",
+      isWeatherSensitive: item.isWeatherSensitive,
+      isActive: item.isActive,
+    },
+  });
+
+  const onSubmit = handleSubmit(async (values) => {
     setError(null);
-    setPending(true);
     const result = await api.patch(`/api/items/${item.id}`, {
-      name: form.name.trim(),
-      categoryId: form.categoryId,
-      uom: form.uom,
-      vatClass: form.vatClass,
-      standardCost: form.standardCost,
-      reorderPoint: form.reorderPoint,
-      reorderQty: form.reorderQty,
-      dpwhPayItem: form.dpwhPayItem?.trim() ? form.dpwhPayItem.trim() : null,
-      isWeatherSensitive: form.isWeatherSensitive,
-      isActive: form.isActive,
+      ...values,
+      name: values.name.trim(),
+      dpwhPayItem: values.dpwhPayItem.trim() ? values.dpwhPayItem.trim() : null,
     });
-    setPending(false);
     if (!result.ok) {
       setError(result.error);
+      toast.error(result.error);
       return;
     }
+    toast.success("Item updated");
     setOpen(false);
     router.refresh();
-  }
+    queryClient.invalidateQueries({ queryKey: ["items"] });
+  });
 
   if (!open) {
     return (
@@ -95,24 +123,14 @@ export function ItemEditForm({
         <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">Edit item</h2>
         <span className="tabular text-xs text-muted">{item.sku}</span>
       </div>
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4 border-t border-line px-5 py-5">
+      <form onSubmit={onSubmit} className="flex flex-col gap-4 border-t border-line px-5 py-5">
         <FormError>{error}</FormError>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Name" htmlFor="e-name" required className="lg:col-span-2">
-            <Input
-              id="e-name"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              required
-            />
+            <Input id="e-name" required {...register("name")} />
           </Field>
           <Field label="Category" htmlFor="e-categoryId" required>
-            <Select
-              id="e-categoryId"
-              value={form.categoryId}
-              onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
-              required
-            >
+            <Select id="e-categoryId" required {...register("categoryId")}>
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -121,12 +139,7 @@ export function ItemEditForm({
             </Select>
           </Field>
           <Field label="Unit of measure" htmlFor="e-uom" required>
-            <Select
-              id="e-uom"
-              value={form.uom}
-              onChange={(e) => setForm({ ...form, uom: e.target.value })}
-              required
-            >
+            <Select id="e-uom" required {...register("uom")}>
               {UOM_KEYS.map((key) => (
                 <option key={key} value={key}>
                   {UOM_LABELS[key]}
@@ -135,12 +148,7 @@ export function ItemEditForm({
             </Select>
           </Field>
           <Field label="VAT class" htmlFor="e-vatClass" required>
-            <Select
-              id="e-vatClass"
-              value={form.vatClass}
-              onChange={(e) => setForm({ ...form, vatClass: e.target.value })}
-              required
-            >
+            <Select id="e-vatClass" required {...register("vatClass")}>
               {VAT_CLASSES.map((v) => (
                 <option key={v} value={v}>
                   {v.replace("_", " ")}
@@ -149,61 +157,31 @@ export function ItemEditForm({
             </Select>
           </Field>
           <Field label="Standard cost (PHP)" htmlFor="e-standardCost" required>
-            <Input
-              id="e-standardCost"
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.standardCost}
-              onChange={(e) => setForm({ ...form, standardCost: e.target.value })}
-              required
-            />
+            <Input id="e-standardCost" type="number" min="0" step="0.01" required {...register("standardCost")} />
           </Field>
           <Field label="Reorder point" htmlFor="e-reorderPoint" required>
-            <Input
-              id="e-reorderPoint"
-              type="number"
-              min="0"
-              step="0.001"
-              value={form.reorderPoint}
-              onChange={(e) => setForm({ ...form, reorderPoint: e.target.value })}
-              required
-            />
+            <Input id="e-reorderPoint" type="number" min="0" step="0.001" required {...register("reorderPoint")} />
           </Field>
           <Field label="Reorder qty" htmlFor="e-reorderQty" required>
-            <Input
-              id="e-reorderQty"
-              type="number"
-              min="0"
-              step="0.001"
-              value={form.reorderQty}
-              onChange={(e) => setForm({ ...form, reorderQty: e.target.value })}
-              required
-            />
+            <Input id="e-reorderQty" type="number" min="0" step="0.001" required {...register("reorderQty")} />
           </Field>
           <Field label="DPWH pay item" htmlFor="e-dpwh">
-            <Input
-              id="e-dpwh"
-              value={form.dpwhPayItem ?? ""}
-              onChange={(e) => setForm({ ...form, dpwhPayItem: e.target.value })}
-            />
+            <Input id="e-dpwh" {...register("dpwhPayItem")} />
           </Field>
         </div>
         <label className="flex items-center gap-2 text-sm text-ink-soft">
           <input
             type="checkbox"
-            checked={form.isWeatherSensitive}
-            onChange={(e) => setForm({ ...form, isWeatherSensitive: e.target.checked })}
             className="size-4 rounded border-line-strong accent-ink"
+            {...register("isWeatherSensitive")}
           />
           Weather-sensitive (extra buffer stock in rainy season)
         </label>
         <label className="flex items-center gap-2 text-sm text-ink-soft">
           <input
             type="checkbox"
-            checked={form.isActive}
-            onChange={(e) => setForm({ ...form, isActive: e.target.checked })}
             className="size-4 rounded border-line-strong accent-ink"
+            {...register("isActive")}
           />
           Active (uncheck to hide from new documents without deleting history)
         </label>
@@ -211,8 +189,8 @@ export function ItemEditForm({
           <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)}>
             Cancel
           </Button>
-          <Button type="submit" size="sm" disabled={pending}>
-            {pending ? "Saving…" : "Save changes"}
+          <Button type="submit" size="sm" disabled={isSubmitting}>
+            {isSubmitting ? "Saving…" : "Save changes"}
           </Button>
         </div>
       </form>

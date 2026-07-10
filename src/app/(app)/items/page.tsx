@@ -1,6 +1,6 @@
-import { asc, eq } from "drizzle-orm";
+import { asc } from "drizzle-orm";
 import { db } from "@/db";
-import { items, categories } from "@/db/schema";
+import { categories } from "@/db/schema";
 import { requirePermissionPage, can } from "@/lib/auth/dal";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ItemForm } from "./ItemForm";
@@ -10,27 +10,12 @@ export default async function ItemsPage() {
   await requirePermissionPage("item:read");
   const canWrite = await can("item:write");
 
-  const [rows, categoryRows] = await Promise.all([
-    db
-      .select({
-        id: items.id,
-        sku: items.sku,
-        name: items.name,
-        uom: items.uom,
-        standardCost: items.standardCost,
-        reorderPoint: items.reorderPoint,
-        reorderQty: items.reorderQty,
-        isWeatherSensitive: items.isWeatherSensitive,
-        categoryName: categories.name,
-      })
-      .from(items)
-      .innerJoin(categories, eq(categories.id, items.categoryId))
-      .orderBy(asc(items.name)),
-    db
-      .select({ id: categories.id, name: categories.name })
-      .from(categories)
-      .orderBy(asc(categories.name)),
-  ]);
+  // Only the create form's category select needs server data; the table fetches
+  // its own rows client-side (TanStack Query) with server pagination + search.
+  const categoryRows = await db
+    .select({ id: categories.id, name: categories.name })
+    .from(categories)
+    .orderBy(asc(categories.name));
 
   return (
     <>
@@ -39,7 +24,7 @@ export default async function ItemsPage() {
         description="Material catalog — SKUs, units of measure, and reorder levels."
       />
       {canWrite ? <ItemForm categories={categoryRows} /> : null}
-      <ItemsTable rows={rows} />
+      <ItemsTable />
     </>
   );
 }

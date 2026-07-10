@@ -1,9 +1,10 @@
 import { z } from "zod";
-import { created, handler, ok, parseBody } from "@/lib/api";
+import { asc, eq, ilike, or, sql } from "drizzle-orm";
+import { created, handler, ok, parseBody, parseQuery } from "@/lib/api";
 import { requirePermission } from "@/lib/auth/dal";
 import { db } from "@/db";
-import { items, uomEnum } from "@/db/schema";
-import { moneySchema, uuidSchema, vatClassSchema } from "@/lib/validation";
+import { items, categories, uomEnum } from "@/db/schema";
+import { moneySchema, paginationSchema, uuidSchema, vatClassSchema } from "@/lib/validation";
 
 /** Non-negative quantity (up to 3 dp) — reorder levels may legitimately be 0. */
 const nonNegQty = z
@@ -35,10 +36,36 @@ const createItemSchema = z.object({
   isWeatherSensitive: z.boolean().optional(),
 });
 
-export const GET = handler(async () => {
+const listQuerySchema = paginationSchema.extend({ q: z.string().trim().optional() });
+
+export const GET = handler(async (req) => {
   await requirePermission("item:read");
-  const rows = await db.query.items.findMany({ orderBy: (t, { asc }) => asc(t.name) });
-  return ok(rows);
+  const { page, pageSize, q } = parseQuery(req.url, listQuerySchema);
+  const where = q ? or(ilike(items.sku, `%${q}%`), ilike(items.name, `%${q}%`)) : undefined;
+
+  const [rows, [{ total }]] = await Promise.all([
+    db
+      .select({
+        id: items.id,
+        sku: items.sku,
+        name: items.name,
+        uom: items.uom,
+        standardCost: items.standardCost,
+        reorderPoint: items.reorderPoint,
+        isWeatherSensitive: items.isWeatherSensitive,
+        isActive: items.isActive,
+        categoryName: categories.name,
+      })
+      .from(items)
+      .innerJoin(categories, eq(categories.id, items.categoryId))
+      .where(where)
+      .orderBy(asc(items.name))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize),
+    db.select({ total: sql<number>`count(*)::int` }).from(items).where(where),
+  ]);
+
+  return ok({ rows, total, page, pageSize });
 });
 
 export const POST = handler(async (req) => {

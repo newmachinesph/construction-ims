@@ -50,4 +50,5 @@ next-env.d.ts
 /e2e/.image-cache/
 seed-run.log
 backfill.log
+devserver.log
 _*.mjs
