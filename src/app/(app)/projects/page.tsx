@@ -16,7 +16,7 @@ export default async function ProjectsPage() {
     <>
       <PageHeader title="Projects" description="Construction sites and contracts tracked for materials." />
       {canWrite ? <ProjectForm /> : null}
-      <ProjectsTable rows={rows} />
+      <ProjectsTable rows={rows} canWrite={canWrite} />
     </>
   );
 }

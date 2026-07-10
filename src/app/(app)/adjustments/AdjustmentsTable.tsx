@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { Table, TableWrap, THead, TBody, Th, Tr, Td, EmptyRow } from "@/components/ui/Table";
@@ -55,7 +56,14 @@ export function AdjustmentsTable({
             ) : (
               filtered.map((a) => (
                 <Tr key={a.id}>
-                  <Td className="font-medium text-ink">{a.adjustmentNumber}</Td>
+                  <Td className="font-medium">
+                    <Link
+                      href={`/adjustments/${a.id}`}
+                      className="text-ink-soft hover:text-ink hover:underline"
+                    >
+                      {a.adjustmentNumber}
+                    </Link>
+                  </Td>
                   <Td muted>{a.warehouse.name}</Td>
                   <Td>
                     <StatusBadge value={a.reason} tone={ALERT_REASONS.has(a.reason) ? "alert" : "outline"} />

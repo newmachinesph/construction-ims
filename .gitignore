@@ -49,4 +49,5 @@ next-env.d.ts
 /playwright/.cache/
 /e2e/.image-cache/
 seed-run.log
+backfill.log
 _*.mjs

@@ -23,6 +23,7 @@ interface SupplierFormState {
   email: string;
   phone: string;
   address: string;
+  isActive: boolean;
 }
 
 const EMPTY_FORM: SupplierFormState = {
@@ -38,6 +39,7 @@ const EMPTY_FORM: SupplierFormState = {
   email: "",
   phone: "",
   address: "",
+  isActive: true,
 };
 
 function toFormState(s: SupplierRow): SupplierFormState {
@@ -54,6 +56,7 @@ function toFormState(s: SupplierRow): SupplierFormState {
     email: s.email ?? "",
     phone: s.phone ?? "",
     address: s.address ?? "",
+    isActive: s.isActive,
   };
 }
 
@@ -97,6 +100,7 @@ export function SupplierForm({ mode, supplier, onDone }: SupplierFormProps) {
     setOptional(body, "email", form.email);
     setOptional(body, "phone", form.phone);
     setOptional(body, "address", form.address);
+    if (mode === "edit") body.isActive = form.isActive;
 
     const result =
       mode === "create"
@@ -222,6 +226,17 @@ export function SupplierForm({ mode, supplier, onDone }: SupplierFormProps) {
         />
         Subject to expanded withholding tax
       </label>
+      {mode === "edit" ? (
+        <label className="flex items-center gap-2 text-sm text-ink-soft">
+          <input
+            type="checkbox"
+            checked={form.isActive}
+            onChange={(e) => setForm({ ...form, isActive: e.target.checked })}
+            className="size-4 rounded border-line-strong accent-ink"
+          />
+          Active (uncheck to deactivate this supplier)
+        </label>
+      ) : null}
       <div className="flex justify-end gap-2">
         <Button
           type="button"

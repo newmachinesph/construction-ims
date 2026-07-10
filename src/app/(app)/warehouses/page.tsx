@@ -17,6 +17,7 @@ export default async function WarehousesPage() {
         code: warehouses.code,
         name: warehouses.name,
         kind: warehouses.kind,
+        projectId: warehouses.projectId,
         address: warehouses.address,
         isActive: warehouses.isActive,
         projectName: projects.name,
@@ -34,7 +35,7 @@ export default async function WarehousesPage() {
         description="Main warehouse and site bodegas where stock physically lives."
       />
       {canWrite ? <WarehouseForm projects={projectRows} /> : null}
-      <WarehousesTable rows={rows} />
+      <WarehousesTable rows={rows} projects={projectRows} canWrite={canWrite} />
     </>
   );
 }
