@@ -47,4 +47,6 @@ next-env.d.ts
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+/e2e/.image-cache/
+seed-run.log
 _*.mjs
