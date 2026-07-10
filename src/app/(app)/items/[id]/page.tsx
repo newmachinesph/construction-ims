@@ -16,35 +16,39 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
   await requirePermissionPage("item:read");
   const { id } = await params;
 
-  const [row] = await db
-    .select({
-      id: items.id,
-      sku: items.sku,
-      name: items.name,
-      uom: items.uom,
-      standardCost: items.standardCost,
-      reorderPoint: items.reorderPoint,
-      reorderQty: items.reorderQty,
-      vatClass: items.vatClass,
-      dpwhPayItem: items.dpwhPayItem,
-      isWeatherSensitive: items.isWeatherSensitive,
-      isActive: items.isActive,
-      categoryId: items.categoryId,
-      categoryName: categories.name,
-    })
-    .from(items)
-    .innerJoin(categories, eq(categories.id, items.categoryId))
-    .where(eq(items.id, id))
-    .limit(1);
+  // Fire both round trips together — the category list is only needed by the
+  // (collapsed) edit form, so it must never sit in series ahead of the item.
+  const canWrite = await can("item:write");
+  const [[row], categoryOptions] = await Promise.all([
+    db
+      .select({
+        id: items.id,
+        sku: items.sku,
+        name: items.name,
+        uom: items.uom,
+        standardCost: items.standardCost,
+        reorderPoint: items.reorderPoint,
+        reorderQty: items.reorderQty,
+        vatClass: items.vatClass,
+        dpwhPayItem: items.dpwhPayItem,
+        isWeatherSensitive: items.isWeatherSensitive,
+        isActive: items.isActive,
+        categoryId: items.categoryId,
+        categoryName: categories.name,
+      })
+      .from(items)
+      .innerJoin(categories, eq(categories.id, items.categoryId))
+      .where(eq(items.id, id))
+      .limit(1),
+    canWrite
+      ? db
+          .select({ id: categories.id, name: categories.name })
+          .from(categories)
+          .orderBy(asc(categories.name))
+      : Promise.resolve([]),
+  ]);
 
   if (!row) notFound();
-  const canWrite = await can("item:write");
-  const categoryOptions = canWrite
-    ? await db
-        .select({ id: categories.id, name: categories.name })
-        .from(categories)
-        .orderBy(asc(categories.name))
-    : [];
 
   const facts: [string, string][] = [
     ["Category", row.categoryName],
