@@ -15,6 +15,13 @@
       "when": 1783705828153,
       "tag": "0001_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783712756197,
+      "tag": "0002_constraints",
+      "breakpoints": true
     }
   ]
 }
