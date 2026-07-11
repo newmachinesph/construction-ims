@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { customers, items, saleItems, sales, stockLevels } from "@/db/schema";
@@ -43,6 +44,15 @@ export interface CreateSaleInput {
  */
 export async function createAndPostSale(actor: SessionUser, input: CreateSaleInput) {
   if (input.lines.length === 0) throw new BusinessRuleError("A sale needs at least one line.");
+
+  // An item whose selling price was never set defaults to 0. Ringing that up
+  // would hand stock over for free and post a PHP 0 invoice.
+  const unpriced = input.lines.filter((l) => Number(l.unitPrice) <= 0);
+  if (unpriced.length > 0) {
+    throw new BusinessRuleError(
+      "Every sale line needs a unit price above zero. Set the item's selling price, or type the price at the counter.",
+    );
+  }
 
   const totals = computeTotals(
     input.lines.map((l) => ({
@@ -146,7 +156,9 @@ export async function listSales(limit = 50) {
   });
 }
 
-export async function getSale(id: string) {
+/** `cache()` dedupes the lookup across generateMetadata + the page render, which
+ *  both need the sale — one query per request, not two. */
+export const getSale = cache(async (id: string) => {
   const sale = await db.query.sales.findFirst({
     where: eq(sales.id, id),
     with: {
@@ -158,7 +170,7 @@ export async function getSale(id: string) {
   });
   if (!sale) throw new NotFoundError("Sale");
   return sale;
-}
+});
 
 /* ----------------------------- customers ---------------------------- */
 

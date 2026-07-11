@@ -17,6 +17,15 @@ export const moneySchema = z
     message: "Must be a non-negative amount with up to 2 decimal places.",
   });
 
+/** A strictly positive money amount (2 dp). Use where zero is a bug — e.g. a
+ *  sale line: an item with no selling price set must not ring up at PHP 0. */
+export const positiveMoneySchema = z
+  .union([z.string(), z.number()])
+  .transform((v) => String(v))
+  .refine((v) => /^\d+(\.\d{1,2})?$/.test(v) && Number(v) > 0, {
+    message: "Must be greater than zero.",
+  });
+
 export const uuidSchema = z.string().uuid();
 
 export const vatClassSchema = z.enum(["VATABLE", "ZERO_RATED", "EXEMPT"]);
