@@ -52,3 +52,4 @@ seed-run.log
 backfill.log
 devserver.log
 _*.mjs
+.gstack/
