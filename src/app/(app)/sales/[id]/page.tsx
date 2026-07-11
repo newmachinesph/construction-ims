@@ -6,6 +6,7 @@ import { getSale } from "@/lib/services/sales";
 import { formatManila, formatPHP, formatQty, UOM_LABELS } from "@/lib/ph";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PrintButton } from "@/app/(app)/reports/PrintButton";
+import { VoidSaleButton } from "./VoidSaleButton";
 import { Table, TableWrap, THead, TBody, Th, Tr, Td } from "@/components/ui/Table";
 
 function uomLabel(uom: string): string {
@@ -24,10 +25,11 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
   await requirePermissionPage("sale:read");
   const { id } = await params;
 
-  const [sale, settings, canCost] = await Promise.all([
+  const [sale, settings, canCost, canVoid] = await Promise.all([
     getSale(id),
     db.query.companySettings.findFirst({ where: eq(companySettings.id, 1) }),
     can("report:cost"),
+    can("sale:void"),
   ]);
 
   const buyer = sale.customer?.name ?? sale.customerName ?? "Walk-in customer";
@@ -44,10 +46,21 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
       <style>{"@media print{ aside,header,.no-print{display:none!important} main{padding:0!important} }"}</style>
 
       <PageHeader title={`Sales invoice ${sale.siNumber}`} description={formatManila(sale.createdAt)}>
-        <span className="no-print">
+        <span className="no-print flex items-center gap-2">
           <PrintButton />
+          {canVoid && sale.status === "POSTED" ? (
+            <VoidSaleButton saleId={sale.id} siNumber={sale.siNumber} />
+          ) : null}
         </span>
       </PageHeader>
+
+      {sale.status === "CANCELLED" ? (
+        <p className="rounded-card border border-alert px-4 py-3 text-sm text-alert" role="status">
+          This invoice was VOIDED and the stock restored. It stays on the books — the BIR serial
+          cannot be reused.
+          {sale.notes ? <span className="block text-xs text-muted">Reason: {sale.notes}</span> : null}
+        </p>
+      ) : null}
 
       <section className="rounded-card border border-line bg-surface p-6">
         <div className="mb-6 flex flex-wrap items-start justify-between gap-6 border-b border-line pb-6">

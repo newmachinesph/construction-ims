@@ -120,6 +120,7 @@ export const movementTypeEnum = pgEnum("movement_type", [
   "RETURN_TO_SUPPLIER", // -
   "RETURN_FROM_SITE", // +
   "SALE", // - counter sale to a customer (POS)
+  "SALE_RETURN", // + reversal of a voided sale, restoring stock at its sold cost
 ]);
 
 /** How a counter sale was settled. */
@@ -743,9 +744,13 @@ export const saleItems = pgTable(
   "sale_items",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    // RESTRICT, not CASCADE (which every other line table uses): a sale row is a
+    // POSTED BIR sales invoice with no draft state, so deleting the header must
+    // never silently take its lines with it and strand the SALE ledger rows.
+    // A correction is a reversing movement, never a delete.
     saleId: uuid("sale_id")
       .notNull()
-      .references(() => sales.id, { onDelete: "cascade" }),
+      .references(() => sales.id, { onDelete: "restrict" }),
     itemId: uuid("item_id")
       .notNull()
       .references(() => items.id, { onDelete: "restrict" }),

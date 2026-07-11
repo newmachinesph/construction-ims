@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select, FormError } from "@/components/ui/Field";
@@ -62,6 +62,7 @@ export function PosTerminal({
 }) {
   const router = useRouter();
   const toast = useToast();
+  const queryClient = useQueryClient();
 
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? "");
   const [query, setQuery] = useState("");
@@ -147,12 +148,19 @@ export function PosTerminal({
 
   const overSold = lines.filter((l) => Number(l.quantity) > Number(l.qtyOnHand));
   const unpriced = lines.filter((l) => !(Number(l.unitPrice) > 0));
+  // Number("") and Number("0") are both 0, so a blank/zero qty passes the overSold
+  // check (0 > onHand is false) and would leave the button enabled.
+  const zeroQty = lines.filter((l) => !(Number(l.quantity) > 0));
 
   async function submit() {
     setError(null);
 
     if (lines.length === 0) {
       setError("Add at least one item to the sale.");
+      return;
+    }
+    if (zeroQty.length > 0) {
+      setError(`Enter a quantity above zero for: ${zeroQty.map((l) => l.sku).join(", ")}.`);
       return;
     }
     if (unpriced.length > 0) {
@@ -179,11 +187,11 @@ export function PosTerminal({
       saleDate: manilaToday(),
       paymentMethod,
       amountTendered: paymentMethod === "CASH" && amountTendered ? amountTendered : null,
+      // No vatClass: the server reads it from the item master.
       lines: lines.map((l) => ({
         itemId: l.itemId,
         quantity: l.quantity,
         unitPrice: l.unitPrice,
-        vatClass: l.vatClass,
       })),
     });
     setSubmitting(false);
@@ -194,6 +202,10 @@ export function PosTerminal({
       return;
     }
     toast.success(`Sale ${result.data.siNumber} posted.`);
+    // Stock just moved. Without this the 30s staleTime would serve pre-sale
+    // qtyOnHand to the next customer at this register — showing sold-out goods
+    // as available until the server rejects them at submit.
+    await queryClient.invalidateQueries({ queryKey: ["sellable", warehouseId] });
     router.push(`/sales/${result.data.id}`);
   }
 
@@ -207,6 +219,9 @@ export function PosTerminal({
               id="pos-warehouse"
               value={warehouseId}
               onChange={(e) => {
+                // Stock is per-warehouse, so the cart cannot survive the switch.
+                // Say so rather than silently wiping a half-rung sale.
+                if (lines.length > 0) toast.info("Cart cleared — warehouse changed.");
                 setWarehouseId(e.target.value);
                 setLines([]);
               }}
@@ -456,7 +471,13 @@ export function PosTerminal({
 
         <Button
           onClick={submit}
-          disabled={submitting || lines.length === 0 || unpriced.length > 0 || overSold.length > 0}
+          disabled={
+            submitting ||
+            lines.length === 0 ||
+            unpriced.length > 0 ||
+            overSold.length > 0 ||
+            zeroQty.length > 0
+          }
         >
           {submitting ? "Posting sale…" : "Complete sale"}
         </Button>

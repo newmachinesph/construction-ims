@@ -35,7 +35,7 @@ export const PERMISSIONS = [
   "adjustment:read", "adjustment:create", "adjustment:approve", "adjustment:post",
 
   // counter sales (POS)
-  "sale:read", "sale:create",
+  "sale:read", "sale:create", "sale:void",
   "customer:read", "customer:write",
 
   // visibility
@@ -120,6 +120,10 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     "audit:read",
     "supplier:write",
     "customer:write",
+    // Voiding is a books correction, so it sits with finance — deliberately NOT
+    // with WAREHOUSEMAN, who rings the sale: a cashier who could void their own
+    // sale could ring goods out, pocket the cash, and erase the invoice.
+    "sale:void",
   ],
 
   AUDITOR: [...READ_ONLY, "report:cost", "audit:read"],

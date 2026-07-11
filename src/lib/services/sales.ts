@@ -1,20 +1,23 @@
 import "server-only";
 import { cache } from "react";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { customers, items, saleItems, sales, stockLevels } from "@/db/schema";
 import type { PaymentMethod } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth/session";
-import { BusinessRuleError, NotFoundError } from "@/lib/errors";
-import { computeTotals, lineTotal, type TaxLine } from "@/lib/ph";
+import { assertSeparationOfDuties } from "@/lib/rbac";
+import { BusinessRuleError, ConflictError, NotFoundError } from "@/lib/errors";
+import { computeTotals, lineTotal } from "@/lib/ph";
 import { applyMovement, nextDocumentNumber, writeAudit } from "./ledger";
 
 export interface SaleLineInput {
   itemId: string;
   quantity: string;
-  /** VAT-exclusive unit price. Defaults to the item's selling price. */
+  /** VAT-exclusive unit price. Defaults to the item's selling price, but the
+   *  counter may negotiate, so this IS a legitimate per-sale override. */
   unitPrice: string;
-  vatClass: TaxLine["vatClass"];
+  // NOTE: no vatClass. BIR tax classification is a property of the item, not of
+  // the sale, so it is read from the item master — never accepted from the client.
 }
 
 export interface CreateSaleInput {
@@ -54,16 +57,44 @@ export async function createAndPostSale(actor: SessionUser, input: CreateSaleInp
     );
   }
 
+  // Read tax class and catalogue price from the ITEM MASTER, never from the client.
+  // A cashier posting straight to the API could otherwise declare a VATable item
+  // "EXEMPT" and zero out the 12% output VAT while stock still leaves the shelf
+  // and a gapless SI number is consumed — silent under-remittance to the BIR.
+  const catalogue = await db
+    .select({
+      id: items.id,
+      sku: items.sku,
+      vatClass: items.vatClass,
+      sellingPrice: items.sellingPrice,
+      isActive: items.isActive,
+    })
+    .from(items)
+    .where(inArray(items.id, input.lines.map((l) => l.itemId)));
+
+  const byId = new Map(catalogue.map((c) => [c.id, c]));
+  for (const line of input.lines) {
+    const item = byId.get(line.itemId);
+    if (!item) throw new NotFoundError(`Item ${line.itemId}`);
+    if (!item.isActive) throw new BusinessRuleError(`${item.sku} is inactive and cannot be sold.`);
+  }
+
   const totals = computeTotals(
     input.lines.map((l) => ({
       unitPrice: l.unitPrice,
       quantity: l.quantity,
-      vatClass: l.vatClass,
+      vatClass: byId.get(l.itemId)!.vatClass,
     })),
     { withholdEwt: false }, // We are the seller: output VAT only, no EWT on our own sale.
   );
 
-  if (input.paymentMethod === "CASH" && input.amountTendered) {
+  // A cash sale must record what was handed over. Guarding on `&& amountTendered`
+  // would make the whole check opt-in: omit the field and a cash sale posts with
+  // no tender recorded and no validation that the cash even covered the bill.
+  if (input.paymentMethod === "CASH") {
+    if (input.amountTendered === null || input.amountTendered === undefined) {
+      throw new BusinessRuleError("A cash sale must record the amount tendered.");
+    }
     if (Number(input.amountTendered) + 1e-9 < Number(totals.total)) {
       throw new BusinessRuleError(
         `Cash tendered (${input.amountTendered}) is less than the total due (${totals.total}).`,
@@ -99,27 +130,14 @@ export async function createAndPostSale(actor: SessionUser, input: CreateSaleInp
       .returning();
 
     for (const line of input.lines) {
-      // Read the moving average BEFORE the movement so the cost we freeze on the
-      // line is what these units actually left the shelf at.
-      const [level] = await tx
-        .select({ avgUnitCost: stockLevels.avgUnitCost })
-        .from(stockLevels)
-        .where(
-          and(eq(stockLevels.itemId, line.itemId), eq(stockLevels.warehouseId, input.warehouseId)),
-        );
+      const item = byId.get(line.itemId)!;
 
-      await tx.insert(saleItems).values({
-        saleId: sale.id,
-        itemId: line.itemId,
-        quantity: line.quantity,
-        unitPrice: line.unitPrice,
-        vatClass: line.vatClass,
-        lineTotal: lineTotal({ unitPrice: line.unitPrice, quantity: line.quantity }),
-        unitCost: level?.avgUnitCost ?? "0",
-      });
-
-      // Deducts stock; throws BusinessRuleError if the shelf can't cover it.
-      await applyMovement(tx, {
+      // Post the movement FIRST: it deducts stock under a FOR UPDATE lock and
+      // returns the cost the goods actually left at. Re-reading avgUnitCost
+      // separately (unlocked) could race a concurrent receipt and freeze a cost
+      // on the sale line that disagrees with the ledger for the very same sale.
+      // Throws BusinessRuleError if the shelf cannot cover the line.
+      const movement = await applyMovement(tx, {
         itemId: line.itemId,
         warehouseId: input.warehouseId,
         type: "SALE",
@@ -129,7 +147,31 @@ export async function createAndPostSale(actor: SessionUser, input: CreateSaleInp
         refNumber: siNumber,
         actorId: actor.id,
       });
+
+      await tx.insert(saleItems).values({
+        saleId: sale.id,
+        itemId: line.itemId,
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        vatClass: item.vatClass, // from the item master, not the client
+        lineTotal: lineTotal({ unitPrice: line.unitPrice, quantity: line.quantity }),
+        unitCost: movement.unitCost, // the cost actually posted to the ledger
+      });
     }
+
+    // Record any line sold below its catalogue price. The counter may legitimately
+    // negotiate, so this is not blocked — but a cashier holds `sale:create` without
+    // `report:cost`, so systematic under-pricing for an accomplice would otherwise
+    // leave no trace at all. Freezing the catalogue price here makes it reviewable.
+    const discounted = input.lines
+      .map((l) => ({ line: l, item: byId.get(l.itemId)! }))
+      .filter(({ line, item }) => Number(line.unitPrice) < Number(item.sellingPrice))
+      .map(({ line, item }) => ({
+        sku: item.sku,
+        catalogPrice: item.sellingPrice,
+        chargedPrice: line.unitPrice,
+        quantity: line.quantity,
+      }));
 
     await writeAudit(tx, {
       actorId: actor.id,
@@ -137,10 +179,83 @@ export async function createAndPostSale(actor: SessionUser, input: CreateSaleInp
       action: "SALE_POST",
       entity: "sale",
       entityId: sale.id,
-      after: { siNumber, total: totals.total, paymentMethod: input.paymentMethod },
+      after: {
+        siNumber,
+        total: totals.total,
+        paymentMethod: input.paymentMethod,
+        ...(discounted.length > 0 ? { belowCatalogPrice: discounted } : {}),
+      },
     });
 
     return sale;
+  });
+}
+
+/**
+ * Void a posted sale (wrong item, wrong quantity, customer walked away).
+ *
+ * BIR: a sales invoice is never deleted — the serial stays consumed and the row
+ * stays on the books as CANCELLED, so the series remains gapless. Stock is
+ * restored by a compensating SALE_RETURN movement per line, valued at the cost
+ * the goods actually left at (frozen on the sale line), so voiding cannot be used
+ * to launder the moving-average cost.
+ *
+ * Separation of duties: the cashier who rang the sale cannot void it. Otherwise a
+ * cashier could ring goods out, pocket the cash, and erase the evidence.
+ */
+export async function voidSale(actor: SessionUser, saleId: string, reason: string) {
+  return db.transaction(async (tx) => {
+    const sale = await tx.query.sales.findFirst({
+      where: eq(sales.id, saleId),
+      with: { lines: true },
+    });
+    if (!sale) throw new NotFoundError("Sale");
+    if (sale.status !== "POSTED") {
+      throw new ConflictError(`Cannot void a sale in status ${sale.status}.`);
+    }
+
+    assertSeparationOfDuties(
+      actor.id,
+      [sale.createdBy],
+      "You cannot void a sale you rang up yourself.",
+    );
+
+    for (const line of sale.lines) {
+      await applyMovement(tx, {
+        itemId: line.itemId,
+        warehouseId: sale.warehouseId,
+        type: "SALE_RETURN",
+        quantity: line.quantity,
+        // Restore at the cost it sold at, not today's average.
+        unitCost: line.unitCost,
+        refType: "SALE_VOID",
+        refId: sale.id,
+        refNumber: sale.siNumber,
+        notes: reason,
+        actorId: actor.id,
+      });
+    }
+
+    // Status-guarded: a concurrent void updates 0 rows here and rolls back its
+    // duplicate SALE_RETURN movements rather than restoring the stock twice.
+    const [updated] = await tx
+      .update(sales)
+      .set({ status: "CANCELLED", notes: reason, updatedAt: new Date() })
+      .where(and(eq(sales.id, saleId), eq(sales.status, "POSTED")))
+      .returning();
+    if (!updated) throw new ConflictError("Sale was already voided.");
+
+    await writeAudit(tx, {
+      actorId: actor.id,
+      actorEmail: actor.email,
+      action: "SALE_VOID",
+      entity: "sale",
+      entityId: sale.id,
+      before: { status: "POSTED", total: sale.total },
+      after: { status: "CANCELLED", reason },
+    });
+
+    return updated;
   });
 }
 

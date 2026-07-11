@@ -7,7 +7,6 @@ import {
   qtySchema,
   tinSchema,
   uuidSchema,
-  vatClassSchema,
 } from "@/lib/validation";
 import { createAndPostSale, listSales } from "@/lib/services/sales";
 
@@ -17,7 +16,9 @@ const saleLineSchema = z.object({
   // Strictly positive: an item whose selling price was never set must not ring
   // up at PHP 0 — that is a giveaway, not a sale.
   unitPrice: positiveMoneySchema,
-  vatClass: vatClassSchema,
+  // No vatClass: BIR tax classification is read from the item master server-side.
+  // Accepting it here would let a caller declare a VATable item "EXEMPT" and zero
+  // out the 12% output VAT.
 });
 
 const createSaleSchema = z.object({
@@ -30,6 +31,9 @@ const createSaleSchema = z.object({
   amountTendered: moneySchema.nullish(),
   notes: z.string().trim().max(500).optional(),
   lines: z.array(saleLineSchema).min(1, "A sale needs at least one line."),
+}).refine((v) => v.paymentMethod !== "CASH" || v.amountTendered != null, {
+  message: "A cash sale must record the amount tendered.",
+  path: ["amountTendered"],
 });
 
 export const GET = handler(async () => {

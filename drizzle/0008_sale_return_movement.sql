@@ -1,0 +1,1 @@
+ALTER TYPE "public"."movement_type" ADD VALUE 'SALE_RETURN';

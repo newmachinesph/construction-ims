@@ -10,6 +10,7 @@ const INBOUND: ReadonlySet<MovementType> = new Set<MovementType>([
   "RECEIPT",
   "TRANSFER_IN",
   "RETURN_FROM_SITE",
+  "SALE_RETURN",
 ]);
 
 const OUTBOUND: ReadonlySet<MovementType> = new Set<MovementType>([
