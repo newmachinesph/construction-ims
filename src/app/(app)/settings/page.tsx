@@ -22,6 +22,7 @@ export default async function SettingsPage() {
             address: s.address,
             pcabLicenseNo: s.pcabLicenseNo,
             vatRegistered: s.vatRegistered,
+            vatRate: s.vatRate,
             isTopWithholdingAgent: s.isTopWithholdingAgent,
           }}
           canWrite={canWrite}

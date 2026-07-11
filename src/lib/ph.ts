@@ -107,7 +107,7 @@ export function lineTotal(line: Pick<TaxLine, "unitPrice" | "quantity">): string
  */
 export function computeTotals(
   lines: readonly TaxLine[],
-  opts: { withholdEwt: boolean; ewtRate?: number } = { withholdEwt: false },
+  opts: { withholdEwt: boolean; ewtRate?: number; vatRate?: number } = { withholdEwt: false },
 ): TaxTotals {
   let vatable = 0;
   let zeroRated = 0;
@@ -120,8 +120,12 @@ export function computeTotals(
     else exempt += cents;
   }
 
+  // Defaults to the statutory 12%. Sales pass the company's configured rate (0
+  // when the company is not VAT-registered); purchases keep the default.
+  const vatRate = opts.vatRate ?? VAT_RATE;
+
   const subtotal = vatable + zeroRated + exempt;
-  const vat = Math.round(vatable * VAT_RATE);
+  const vat = Math.round(vatable * vatRate);
   const total = subtotal + vat;
 
   // EWT base is the VAT-exclusive amount across ALL classes.

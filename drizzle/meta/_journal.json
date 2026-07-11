@@ -64,6 +64,13 @@
       "when": 1783767660040,
       "tag": "0008_sale_return_movement",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1783779478209,
+      "tag": "0009_vat_rate_setting",
+      "breakpoints": true
     }
   ]
 }

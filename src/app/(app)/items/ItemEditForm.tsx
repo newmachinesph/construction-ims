@@ -159,10 +159,10 @@ export function ItemEditForm({
               ))}
             </Select>
           </Field>
-          <Field label="Standard cost (PHP)" htmlFor="e-standardCost" required>
+          <Field label="Cost (PHP)" htmlFor="e-standardCost" required>
             <Input id="e-standardCost" type="number" min="0" step="0.01" required {...register("standardCost")} />
           </Field>
-          <Field label="Selling price (PHP)" htmlFor="e-sellingPrice" hint="VAT-exclusive. Default price at the counter.">
+          <Field label="SRP / Retail price (PHP)" htmlFor="e-sellingPrice" hint="VAT-exclusive. Default price at the counter.">
             <Input id="e-sellingPrice" type="number" min="0" step="0.01" {...register("sellingPrice")} />
           </Field>
           <Field label="Reorder point" htmlFor="e-reorderPoint" required>

@@ -56,9 +56,12 @@ function uomLabel(uom: string): string {
 export function PosTerminal({
   warehouses,
   customers,
+  vatRate,
 }: {
   warehouses: WarehouseOption[];
   customers: CustomerOption[];
+  /** Output-VAT rate from company settings (0 when not VAT-registered). */
+  vatRate: number;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -102,9 +105,9 @@ export function PosTerminal({
           quantity: l.quantity || "0",
           vatClass: l.vatClass,
         })),
-        { withholdEwt: false },
+        { withholdEwt: false, vatRate },
       ),
-    [lines],
+    [lines, vatRate],
   );
 
   const change =
@@ -423,10 +426,17 @@ export function PosTerminal({
               <dd className="tabular text-ink-soft">{formatPHP(totals.exemptSales)}</dd>
             </div>
           ) : null}
-          <div className="flex justify-between">
-            <dt className="text-muted">Output VAT (12%)</dt>
-            <dd className="tabular text-ink-soft">{formatPHP(totals.vatAmount)}</dd>
-          </div>
+          {vatRate > 0 ? (
+            <div className="flex justify-between">
+              <dt className="text-muted">Output VAT ({+(vatRate * 100).toFixed(2)}%)</dt>
+              <dd className="tabular text-ink-soft">{formatPHP(totals.vatAmount)}</dd>
+            </div>
+          ) : (
+            <div className="flex justify-between">
+              <dt className="text-muted">VAT</dt>
+              <dd className="text-xs text-muted">Not VAT-registered</dd>
+            </div>
+          )}
           <div className="mt-2 flex justify-between border-t border-line pt-2 text-base font-semibold">
             <dt className="text-ink">Total due</dt>
             <dd className="tabular text-ink">{formatPHP(totals.total)}</dd>

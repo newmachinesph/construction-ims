@@ -13,6 +13,8 @@ interface SettingsFormProps {
     address: string | null;
     pcabLicenseNo: string | null;
     vatRegistered: boolean;
+    /** Stored 0-1 (0.1200); the form edits it as a percent. */
+    vatRate: string;
     isTopWithholdingAgent: boolean;
   };
   canWrite: boolean;
@@ -26,6 +28,7 @@ export function SettingsForm({ initial, canWrite }: SettingsFormProps) {
     address: initial.address ?? "",
     pcabLicenseNo: initial.pcabLicenseNo ?? "",
     vatRegistered: initial.vatRegistered,
+    vatRatePercent: String(Number(initial.vatRate) * 100),
     isTopWithholdingAgent: initial.isTopWithholdingAgent,
   });
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +47,7 @@ export function SettingsForm({ initial, canWrite }: SettingsFormProps) {
       address: form.address.trim() || undefined,
       pcabLicenseNo: form.pcabLicenseNo.trim() || undefined,
       vatRegistered: form.vatRegistered,
+      vatRatePercent: form.vatRatePercent === "" ? 0 : Number(form.vatRatePercent),
       isTopWithholdingAgent: form.isTopWithholdingAgent,
     });
     setPending(false);
@@ -97,16 +101,46 @@ export function SettingsForm({ initial, canWrite }: SettingsFormProps) {
       </div>
 
       <div className="flex flex-col gap-3 border-t border-line pt-4">
-        <label className="flex items-center gap-2 text-sm text-ink">
-          <input
-            type="checkbox"
-            checked={form.vatRegistered}
-            disabled={!canWrite}
-            onChange={(e) => setForm({ ...form, vatRegistered: e.target.checked })}
-            className="accent-ink"
-          />
-          VAT registered
-        </label>
+        <div>
+          <label className="flex items-center gap-2 text-sm text-ink">
+            <input
+              type="checkbox"
+              checked={form.vatRegistered}
+              disabled={!canWrite}
+              onChange={(e) => setForm({ ...form, vatRegistered: e.target.checked })}
+              className="accent-ink"
+            />
+            VAT registered — charge output VAT on sales
+          </label>
+          <p className="mt-1 pl-6 text-xs text-muted">
+            Uncheck if the company is a non-VAT taxpayer. Sales then carry no output VAT and the
+            invoice prints without a VAT line. This is a company setting — the cashier cannot
+            switch VAT off at the till.
+          </p>
+        </div>
+
+        {form.vatRegistered ? (
+          <div className="pl-6">
+            <Field
+              label="Output VAT rate (%)"
+              htmlFor="vatRatePercent"
+              hint="Statutory PH rate is 12. Applies to VATABLE lines only."
+              className="max-w-45"
+            >
+              <Input
+                id="vatRatePercent"
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                value={form.vatRatePercent}
+                disabled={!canWrite}
+                onChange={(e) => setForm({ ...form, vatRatePercent: e.target.value })}
+              />
+            </Field>
+          </div>
+        ) : null}
+
         <div>
           <label className="flex items-center gap-2 text-sm text-ink">
             <input

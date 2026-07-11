@@ -32,6 +32,13 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
     can("sale:void"),
   ]);
 
+  // Back out the rate this invoice was actually charged at, so an old invoice keeps
+  // showing its own rate even after the company setting changes.
+  const vatRatePct =
+    Number(sale.vatableSales) > 0
+      ? +((Number(sale.vatAmount) / Number(sale.vatableSales)) * 100).toFixed(2)
+      : 0;
+
   const buyer = sale.customer?.name ?? sale.customerName ?? "Walk-in customer";
   const buyerTin = sale.customer?.tin ?? sale.customerTin;
   const change =
@@ -140,10 +147,14 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                 <dd className="tabular text-ink-soft">{formatPHP(sale.exemptSales)}</dd>
               </div>
             ) : null}
-            <div className="flex justify-between">
-              <dt className="text-muted">Output VAT (12%)</dt>
-              <dd className="tabular text-ink-soft">{formatPHP(sale.vatAmount)}</dd>
-            </div>
+            {Number(sale.vatAmount) > 0 || Number(sale.vatableSales) > 0 ? (
+              <div className="flex justify-between">
+                {/* Rate is derived from the sale's own figures, not from today's
+                    setting — a historic invoice must show what it was charged at. */}
+                <dt className="text-muted">Output VAT ({vatRatePct}%)</dt>
+                <dd className="tabular text-ink-soft">{formatPHP(sale.vatAmount)}</dd>
+              </div>
+            ) : null}
             <div className="mt-2 flex justify-between border-t border-line pt-2 text-base font-semibold">
               <dt className="text-ink">Total</dt>
               <dd className="tabular text-ink">{formatPHP(sale.total)}</dd>

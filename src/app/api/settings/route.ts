@@ -19,18 +19,23 @@ const patchSchema = z.object({
   address: z.string().trim().max(240).optional(),
   pcabLicenseNo: z.string().trim().max(40).optional(),
   vatRegistered: z.boolean(),
+  /** Percent as entered in the UI (12 = 12%), stored as a 0-1 rate. */
+  vatRatePercent: z.coerce.number().min(0).max(100),
   isTopWithholdingAgent: z.boolean(),
 });
 
 /** Upsert the single company-settings row (id = 1). */
 export const PATCH = handler(async (req) => {
   await requirePermission("settings:write");
-  const body = await parseBody(req, patchSchema);
+  const { vatRatePercent, ...rest } = await parseBody(req, patchSchema);
+
+  // The UI speaks percent; the DB stores a 0-1 rate (0.1200 = 12%).
+  const values = { ...rest, vatRate: (vatRatePercent / 100).toFixed(4) };
 
   const [row] = await db
     .insert(companySettings)
-    .values({ id: 1, ...body })
-    .onConflictDoUpdate({ target: companySettings.id, set: { ...body, updatedAt: new Date() } })
+    .values({ id: 1, ...values })
+    .onConflictDoUpdate({ target: companySettings.id, set: { ...values, updatedAt: new Date() } })
     .returning();
 
   if (!row) throw new NotFoundError("Company settings");

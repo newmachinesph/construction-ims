@@ -2,11 +2,16 @@ import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { customers, warehouses } from "@/db/schema";
 import { requirePermissionPage } from "@/lib/auth/dal";
+import { outputVatRate } from "@/lib/services/sales";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PosTerminal } from "./PosTerminal";
 
 export default async function PosPage() {
   await requirePermissionPage("sale:create");
+
+  // The rate the server will actually charge — the register displays the same one,
+  // so the cashier never sees a total that differs from what gets posted.
+  const vatRate = await outputVatRate();
 
   const [warehouseRows, customerRows] = await Promise.all([
     db
@@ -30,7 +35,7 @@ export default async function PosPage() {
       {warehouseRows.length === 0 ? (
         <p className="text-sm text-muted">Create a warehouse first — there is nothing to sell from.</p>
       ) : (
-        <PosTerminal warehouses={warehouseRows} customers={customerRows} />
+        <PosTerminal warehouses={warehouseRows} customers={customerRows} vatRate={vatRate} />
       )}
     </>
   );

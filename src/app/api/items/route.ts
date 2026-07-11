@@ -52,6 +52,7 @@ export const GET = handler(async (req) => {
         name: items.name,
         uom: items.uom,
         standardCost: items.standardCost,
+        sellingPrice: items.sellingPrice,
         reorderPoint: items.reorderPoint,
         isWeatherSensitive: items.isWeatherSensitive,
         isActive: items.isActive,

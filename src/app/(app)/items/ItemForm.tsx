@@ -136,10 +136,10 @@ export function ItemForm({ categories }: { categories: CategoryOption[] }) {
                 ))}
               </Select>
             </Field>
-            <Field label="Standard cost (PHP)" htmlFor="standardCost" required>
+            <Field label="Cost (PHP)" htmlFor="standardCost" required>
               <Input id="standardCost" type="number" min="0" step="0.01" required {...register("standardCost")} />
             </Field>
-            <Field label="Selling price (PHP)" htmlFor="sellingPrice" hint="VAT-exclusive. Default price at the counter.">
+            <Field label="SRP / Retail price (PHP)" htmlFor="sellingPrice" hint="VAT-exclusive. Default price at the counter.">
               <Input id="sellingPrice" type="number" min="0" step="0.01" {...register("sellingPrice")} />
             </Field>
             <Field label="Reorder point" htmlFor="reorderPoint" required>
