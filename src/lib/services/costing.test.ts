@@ -20,6 +20,12 @@ describe("signedQuantity", () => {
     expect(signedQuantity("SALE", "6")).toBe(-6);
   });
 
+  // Voiding a sale puts the goods BACK. If SALE_RETURN were treated as outbound,
+  // voiding would deduct the stock a second time instead of restoring it.
+  it("makes a voided-sale return positive", () => {
+    expect(signedQuantity("SALE_RETURN", "6")).toBe(6);
+  });
+
   it("preserves the sign of an adjustment", () => {
     expect(signedQuantity("ADJUSTMENT", "-7")).toBe(-7);
     expect(signedQuantity("ADJUSTMENT", "12")).toBe(12);

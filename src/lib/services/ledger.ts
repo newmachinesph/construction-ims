@@ -78,7 +78,10 @@ export interface MovementInput {
  * Takes `FOR UPDATE` on the (item, warehouse) stock row, so two concurrent
  * issues of the last 10 bags of cement cannot both succeed.
  */
-export async function applyMovement(tx: Tx, input: MovementInput): Promise<{ balanceAfter: string }> {
+export async function applyMovement(
+  tx: Tx,
+  input: MovementInput,
+): Promise<{ balanceAfter: string; unitCost: string }> {
   const delta = signedQuantity(input.type, input.quantity);
   if (delta === 0) throw new BusinessRuleError("Movement quantity cannot be zero.");
 
@@ -149,7 +152,11 @@ export async function applyMovement(tx: Tx, input: MovementInput): Promise<{ bal
     createdBy: input.actorId,
   });
 
-  return { balanceAfter };
+  // Return the cost this movement was actually posted at, read under the same
+  // FOR UPDATE lock. Callers that need to freeze COGS (the POS) must use this
+  // rather than re-reading avgUnitCost unlocked, which can race a concurrent
+  // receipt and leave the sale line disagreeing with the ledger.
+  return { balanceAfter, unitCost: movementUnitCost };
 }
 
 /* ---------------------------- reservations -------------------------- */
