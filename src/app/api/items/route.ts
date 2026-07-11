@@ -28,6 +28,7 @@ const createItemSchema = z.object({
   categoryId: uuidSchema,
   uom: z.enum(uomEnum.enumValues),
   standardCost: moneySchema,
+  sellingPrice: moneySchema.optional(),
   reorderPoint: nonNegQty,
   reorderQty: nonNegQty,
   vatClass: vatClassSchema,

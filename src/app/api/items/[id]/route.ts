@@ -26,6 +26,7 @@ const updateItemSchema = z.object({
   categoryId: uuidSchema.optional(),
   uom: z.enum(uomEnum.enumValues).optional(),
   standardCost: moneySchema.optional(),
+  sellingPrice: moneySchema.optional(),
   reorderPoint: nonNegQty.optional(),
   reorderQty: nonNegQty.optional(),
   vatClass: vatClassSchema.optional(),

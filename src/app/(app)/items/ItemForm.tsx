@@ -26,6 +26,7 @@ interface CreateForm {
   uom: string;
   vatClass: string;
   standardCost: string;
+  sellingPrice: string;
   reorderPoint: string;
   reorderQty: string;
   isWeatherSensitive: boolean;
@@ -39,6 +40,7 @@ function emptyForm(categories: CategoryOption[]): CreateForm {
     uom: "PC",
     vatClass: "VATABLE",
     standardCost: "0",
+    sellingPrice: "0",
     reorderPoint: "0",
     reorderQty: "0",
     isWeatherSensitive: false,
@@ -136,6 +138,9 @@ export function ItemForm({ categories }: { categories: CategoryOption[] }) {
             </Field>
             <Field label="Standard cost (PHP)" htmlFor="standardCost" required>
               <Input id="standardCost" type="number" min="0" step="0.01" required {...register("standardCost")} />
+            </Field>
+            <Field label="Selling price (PHP)" htmlFor="sellingPrice" hint="VAT-exclusive. Default price at the counter.">
+              <Input id="sellingPrice" type="number" min="0" step="0.01" {...register("sellingPrice")} />
             </Field>
             <Field label="Reorder point" htmlFor="reorderPoint" required>
               <Input id="reorderPoint" type="number" min="0" step="0.001" required {...register("reorderPoint")} />
