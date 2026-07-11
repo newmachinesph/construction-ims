@@ -29,6 +29,20 @@
       "when": 1783724681689,
       "tag": "0003_perf_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1783760241198,
+      "tag": "0004_pos_sales",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1783760297509,
+      "tag": "0005_seed_si_series",
+      "breakpoints": true
     }
   ]
 }

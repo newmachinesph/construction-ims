@@ -23,6 +23,7 @@ export interface EditableItem {
   uom: string;
   vatClass: string;
   standardCost: string;
+  sellingPrice: string;
   reorderPoint: string;
   reorderQty: string;
   dpwhPayItem: string | null;
@@ -36,6 +37,7 @@ interface EditForm {
   uom: string;
   vatClass: string;
   standardCost: string;
+  sellingPrice: string;
   reorderPoint: string;
   reorderQty: string;
   dpwhPayItem: string;
@@ -76,6 +78,7 @@ export function ItemEditForm({
       uom: item.uom,
       vatClass: item.vatClass,
       standardCost: item.standardCost,
+      sellingPrice: item.sellingPrice,
       reorderPoint: item.reorderPoint,
       reorderQty: item.reorderQty,
       dpwhPayItem: item.dpwhPayItem ?? "",
@@ -158,6 +161,9 @@ export function ItemEditForm({
           </Field>
           <Field label="Standard cost (PHP)" htmlFor="e-standardCost" required>
             <Input id="e-standardCost" type="number" min="0" step="0.01" required {...register("standardCost")} />
+          </Field>
+          <Field label="Selling price (PHP)" htmlFor="e-sellingPrice" hint="VAT-exclusive. Default price at the counter.">
+            <Input id="e-sellingPrice" type="number" min="0" step="0.01" {...register("sellingPrice")} />
           </Field>
           <Field label="Reorder point" htmlFor="e-reorderPoint" required>
             <Input id="e-reorderPoint" type="number" min="0" step="0.001" required {...register("reorderPoint")} />

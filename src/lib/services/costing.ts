@@ -16,6 +16,7 @@ const OUTBOUND: ReadonlySet<MovementType> = new Set<MovementType>([
   "ISSUE",
   "TRANSFER_OUT",
   "RETURN_TO_SUPPLIER",
+  "SALE",
 ]);
 
 /** ADJUSTMENT carries its own sign; every other type is derived from direction. */

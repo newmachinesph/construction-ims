@@ -119,6 +119,16 @@ export const movementTypeEnum = pgEnum("movement_type", [
   "ADJUSTMENT", // +/- physical count, damage, pilferage
   "RETURN_TO_SUPPLIER", // -
   "RETURN_FROM_SITE", // +
+  "SALE", // - counter sale to a customer (POS)
+]);
+
+/** How a counter sale was settled. */
+export const paymentMethodEnum = pgEnum("payment_method", [
+  "CASH",
+  "GCASH",
+  "BANK_TRANSFER",
+  "CHECK",
+  "CARD",
 ]);
 
 export const adjustmentReasonEnum = pgEnum("adjustment_reason", [
@@ -137,6 +147,7 @@ export const docSeriesEnum = pgEnum("doc_series", [
   "ISSUANCE",
   "TRANSFER",
   "ADJUSTMENT",
+  "SI", // Sales Invoice — the BIR primary document for a counter sale (RR 7-2024)
 ]);
 
 /* ------------------------------- auth ------------------------------- */
@@ -260,6 +271,8 @@ export const items = pgTable(
     dpwhPayItem: varchar("dpwh_pay_item", { length: 24 }),
     vatClass: vatClassEnum("vat_class").notNull().default("VATABLE"),
     standardCost: money("standard_cost").notNull().default("0"),
+    /** VAT-exclusive counter selling price. Default line price at the POS. */
+    sellingPrice: money("selling_price").notNull().default("0"),
     reorderPoint: qty("reorder_point").notNull().default("0"),
     reorderQty: qty("reorder_qty").notNull().default("0"),
     /** Extra buffer held during typhoon / habagat season. */
@@ -660,6 +673,94 @@ export const stockAdjustmentItems = pgTable(
   ],
 );
 
+/* ------------------------- sales / POS ------------------------------ */
+
+/**
+ * Counter-sale customers. Optional on a sale: a walk-in is captured by name on
+ * the invoice instead (BIR requires the buyer's name/TIN on sales of PHP 1,000+).
+ */
+export const customers = pgTable("customers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  code: varchar("code", { length: 32 }).notNull().unique(),
+  name: varchar("name", { length: 200 }).notNull(),
+  tin: varchar("tin", { length: 20 }),
+  address: varchar("address", { length: 240 }),
+  contactPerson: varchar("contact_person", { length: 160 }),
+  email: varchar("email", { length: 255 }),
+  phone: varchar("phone", { length: 40 }),
+  isActive: boolean("is_active").notNull().default(true),
+  ...timestamps,
+});
+
+/**
+ * A posted counter sale = one BIR Sales Invoice. Stock leaves the warehouse as
+ * a SALE movement, costed at the moving average (that is the COGS side); the
+ * money side carries OUTPUT VAT — the mirror of the input VAT on a purchase.
+ * Sales post immediately: there is no draft register tape.
+ */
+export const sales = pgTable(
+  "sales",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Gapless BIR serial from `document_series` ('SI'). */
+    siNumber: varchar("si_number", { length: 40 }).notNull().unique(),
+    customerId: uuid("customer_id").references(() => customers.id, { onDelete: "restrict" }),
+    /** Buyer name as printed on the invoice — set for walk-ins with no customer row. */
+    customerName: varchar("customer_name", { length: 200 }),
+    customerTin: varchar("customer_tin", { length: 20 }),
+    warehouseId: uuid("warehouse_id")
+      .notNull()
+      .references(() => warehouses.id, { onDelete: "restrict" }),
+    status: docStatusEnum("status").notNull().default("POSTED"),
+    saleDate: date("sale_date").notNull(),
+    /** Net of VAT. */
+    subtotal: money("subtotal").notNull().default("0"),
+    vatableSales: money("vatable_sales").notNull().default("0"),
+    zeroRatedSales: money("zero_rated_sales").notNull().default("0"),
+    exemptSales: money("exempt_sales").notNull().default("0"),
+    /** 12% output VAT on vatable lines. */
+    vatAmount: money("vat_amount").notNull().default("0"),
+    /** subtotal + VAT — what the customer pays. */
+    total: money("total").notNull().default("0"),
+    paymentMethod: paymentMethodEnum("payment_method").notNull().default("CASH"),
+    /** Cash handed over; change = tendered - total. Null for non-cash. */
+    amountTendered: money("amount_tendered"),
+    notes: text("notes"),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    postedAt: timestamp("posted_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    index("sales_customer_idx").on(t.customerId),
+    index("sales_warehouse_idx").on(t.warehouseId),
+    index("sales_date_idx").on(t.saleDate),
+  ],
+);
+
+export const saleItems = pgTable(
+  "sale_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    saleId: uuid("sale_id")
+      .notNull()
+      .references(() => sales.id, { onDelete: "cascade" }),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => items.id, { onDelete: "restrict" }),
+    quantity: qty("quantity").notNull(),
+    /** VAT-exclusive selling price. */
+    unitPrice: money("unit_price").notNull(),
+    vatClass: vatClassEnum("vat_class").notNull().default("VATABLE"),
+    lineTotal: money("line_total").notNull(),
+    /** Moving-average cost at the moment of sale — frozen here so margin
+     *  reporting stays correct even after the average later moves. */
+    unitCost: money("unit_cost").notNull().default("0"),
+  },
+  (t) => [index("sale_items_sale_idx").on(t.saleId), index("sale_items_item_idx").on(t.itemId)],
+);
+
 /* ---------------------------- attachments --------------------------- */
 
 /**
@@ -829,6 +930,18 @@ export const stockAdjustmentItemsRelations = relations(stockAdjustmentItems, ({ 
   item: one(items, { fields: [stockAdjustmentItems.itemId], references: [items.id] }),
 }));
 
+export const salesRelations = relations(sales, ({ one, many }) => ({
+  customer: one(customers, { fields: [sales.customerId], references: [customers.id] }),
+  warehouse: one(warehouses, { fields: [sales.warehouseId], references: [warehouses.id] }),
+  cashier: one(users, { fields: [sales.createdBy], references: [users.id] }),
+  lines: many(saleItems),
+}));
+
+export const saleItemsRelations = relations(saleItems, ({ one }) => ({
+  sale: one(sales, { fields: [saleItems.saleId], references: [sales.id] }),
+  item: one(items, { fields: [saleItems.itemId], references: [items.id] }),
+}));
+
 /* ------------------------------ types ------------------------------- */
 
 export type Role = (typeof roleEnum.enumValues)[number];
@@ -836,6 +949,9 @@ export type Uom = (typeof uomEnum.enumValues)[number];
 export type VatClass = (typeof vatClassEnum.enumValues)[number];
 export type MovementType = (typeof movementTypeEnum.enumValues)[number];
 export type DocSeries = (typeof docSeriesEnum.enumValues)[number];
+export type PaymentMethod = (typeof paymentMethodEnum.enumValues)[number];
 export type User = typeof users.$inferSelect;
 export type Item = typeof items.$inferSelect;
 export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
+export type Customer = typeof customers.$inferSelect;
+export type Sale = typeof sales.$inferSelect;

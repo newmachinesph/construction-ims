@@ -34,6 +34,10 @@ export const PERMISSIONS = [
   "transfer:read", "transfer:create", "transfer:dispatch", "transfer:receive",
   "adjustment:read", "adjustment:create", "adjustment:approve", "adjustment:post",
 
+  // counter sales (POS)
+  "sale:read", "sale:create",
+  "customer:read", "customer:write",
+
   // visibility
   "stock:read",
   "movement:read",
@@ -51,6 +55,7 @@ export type Permission = (typeof PERMISSIONS)[number];
 const READ_ONLY: Permission[] = [
   "item:read", "category:read", "supplier:read", "project:read", "warehouse:read",
   "po:read", "grn:read", "mr:read", "issuance:read", "transfer:read", "adjustment:read",
+  "sale:read", "customer:read",
   "stock:read", "movement:read", "report:read",
 ];
 
@@ -87,6 +92,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
 
   WAREHOUSEMAN: [
     // Deliberately no `report:cost`: the bodegero counts bags, not pesos.
+    // Selling price is not cost, so manning the counter is fine.
     ...READ_ONLY,
     "grn:create",
     "grn:post",
@@ -96,6 +102,8 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     "transfer:dispatch",
     "transfer:receive",
     "adjustment:create",
+    "sale:create",
+    "customer:write",
   ],
 
   SITE_ENGINEER: [
@@ -111,6 +119,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     "report:cost",
     "audit:read",
     "supplier:write",
+    "customer:write",
   ],
 
   AUDITOR: [...READ_ONLY, "report:cost", "audit:read"],
@@ -211,6 +220,9 @@ export const ROLE_LABELS: Readonly<Record<Role, string>> = {
 /** Nav entries are filtered by the first permission the user must hold. */
 export const NAV_PERMISSIONS = {
   dashboard: "stock:read",
+  pos: "sale:create",
+  sales: "sale:read",
+  customers: "customer:read",
   stock: "stock:read",
   items: "item:read",
   purchaseOrders: "po:read",

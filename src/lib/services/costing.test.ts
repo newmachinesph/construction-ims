@@ -14,6 +14,12 @@ describe("signedQuantity", () => {
     expect(signedQuantity("RETURN_TO_SUPPLIER", "4")).toBe(-4);
   });
 
+  // A counter sale takes goods OFF the shelf. If SALE were ever treated as
+  // inbound, every POS transaction would silently increase stock.
+  it("makes a counter sale negative", () => {
+    expect(signedQuantity("SALE", "6")).toBe(-6);
+  });
+
   it("preserves the sign of an adjustment", () => {
     expect(signedQuantity("ADJUSTMENT", "-7")).toBe(-7);
     expect(signedQuantity("ADJUSTMENT", "12")).toBe(12);
