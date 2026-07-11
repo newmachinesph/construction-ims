@@ -1,13 +1,22 @@
 import { z } from "zod";
 import { requirePermission } from "@/lib/auth/dal";
 import { created, handler, ok, parseBody } from "@/lib/api";
-import { moneySchema, qtySchema, tinSchema, uuidSchema, vatClassSchema } from "@/lib/validation";
+import {
+  moneySchema,
+  positiveMoneySchema,
+  qtySchema,
+  tinSchema,
+  uuidSchema,
+  vatClassSchema,
+} from "@/lib/validation";
 import { createAndPostSale, listSales } from "@/lib/services/sales";
 
 const saleLineSchema = z.object({
   itemId: uuidSchema,
   quantity: qtySchema,
-  unitPrice: moneySchema,
+  // Strictly positive: an item whose selling price was never set must not ring
+  // up at PHP 0 — that is a giveaway, not a sale.
+  unitPrice: positiveMoneySchema,
   vatClass: vatClassSchema,
 });
 

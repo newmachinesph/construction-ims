@@ -12,6 +12,14 @@ function uomLabel(uom: string): string {
   return UOM_LABELS[uom as keyof typeof UOM_LABELS] ?? uom;
 }
 
+/** The browser names a "Save as PDF" download after the document title, so this
+ *  makes the invoice download as `SI-000123.pdf` rather than the page title. */
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const sale = await getSale(id);
+  return { title: sale.siNumber };
+}
+
 export default async function SaleDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await requirePermissionPage("sale:read");
   const { id } = await params;

@@ -146,12 +146,19 @@ export function PosTerminal({
   }
 
   const overSold = lines.filter((l) => Number(l.quantity) > Number(l.qtyOnHand));
+  const unpriced = lines.filter((l) => !(Number(l.unitPrice) > 0));
 
   async function submit() {
     setError(null);
 
     if (lines.length === 0) {
       setError("Add at least one item to the sale.");
+      return;
+    }
+    if (unpriced.length > 0) {
+      setError(
+        `No selling price set for: ${unpriced.map((l) => l.sku).join(", ")}. Type a price, or set it on the item.`,
+      );
       return;
     }
     if (overSold.length > 0) {
@@ -244,8 +251,12 @@ export function PosTerminal({
                       <span className="text-sm text-ink">{s.name}</span>{" "}
                       <span className="tabular text-xs text-muted">{s.sku}</span>
                       <div className="text-xs text-muted">
-                        {formatPHP(s.sellingPrice)} / {uomLabel(s.uom)} · {formatQty(s.qtyOnHand)} on
-                        hand
+                        {Number(s.sellingPrice) > 0 ? (
+                          formatPHP(s.sellingPrice)
+                        ) : (
+                          <span className="text-alert">No price set</span>
+                        )}{" "}
+                        / {uomLabel(s.uom)} · {formatQty(s.qtyOnHand)} on hand
                       </div>
                     </div>
                     <Button size="sm" variant="secondary" onClick={() => addItem(s)}>
@@ -279,6 +290,7 @@ export function PosTerminal({
               ) : (
                 lines.map((l) => {
                   const short = Number(l.quantity) > Number(l.qtyOnHand);
+                  const noPrice = !(Number(l.unitPrice) > 0);
                   return (
                     <tr key={l.key} className="border-b border-line last:border-0">
                       <td className="px-3 py-2">
@@ -288,6 +300,9 @@ export function PosTerminal({
                           <div className="text-xs text-alert">
                             Only {formatQty(l.qtyOnHand)} {uomLabel(l.uom)} on hand
                           </div>
+                        ) : null}
+                        {noPrice ? (
+                          <div className="text-xs text-alert">No selling price set — enter one.</div>
                         ) : null}
                       </td>
                       <td className="px-3 py-2 text-right">
@@ -439,7 +454,10 @@ export function PosTerminal({
           </div>
         ) : null}
 
-        <Button onClick={submit} disabled={submitting || lines.length === 0}>
+        <Button
+          onClick={submit}
+          disabled={submitting || lines.length === 0 || unpriced.length > 0 || overSold.length > 0}
+        >
           {submitting ? "Posting sale…" : "Complete sale"}
         </Button>
       </section>
