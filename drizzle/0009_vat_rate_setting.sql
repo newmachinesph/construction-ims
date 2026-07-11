@@ -1,0 +1,1 @@
+ALTER TABLE "company_settings" ADD COLUMN "vat_rate" numeric(6, 4) DEFAULT '0.1200' NOT NULL;

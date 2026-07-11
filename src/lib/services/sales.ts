@@ -2,13 +2,29 @@ import "server-only";
 import { cache } from "react";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { customers, items, saleItems, sales, stockLevels } from "@/db/schema";
+import { companySettings, customers, items, saleItems, sales, stockLevels } from "@/db/schema";
 import type { PaymentMethod } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth/session";
 import { assertSeparationOfDuties } from "@/lib/rbac";
 import { BusinessRuleError, ConflictError, NotFoundError } from "@/lib/errors";
 import { computeTotals, lineTotal } from "@/lib/ph";
 import { applyMovement, nextDocumentNumber, writeAudit } from "./ledger";
+
+/**
+ * The output-VAT rate to charge on a sale, from company settings.
+ *
+ * Returns 0 when the company is not VAT-registered — a non-VAT taxpayer charges
+ * no output VAT at all. This is a company-level setting on purpose: a per-sale
+ * "no VAT" switch at the till would be under-remittance to the BIR, so the
+ * cashier has no say in it.
+ */
+export async function outputVatRate(): Promise<number> {
+  const settings = await db.query.companySettings.findFirst({
+    where: eq(companySettings.id, 1),
+  });
+  if (!settings?.vatRegistered) return 0;
+  return Number(settings.vatRate);
+}
 
 export interface SaleLineInput {
   itemId: string;
@@ -85,7 +101,10 @@ export async function createAndPostSale(actor: SessionUser, input: CreateSaleInp
       quantity: l.quantity,
       vatClass: byId.get(l.itemId)!.vatClass,
     })),
-    { withholdEwt: false }, // We are the seller: output VAT only, no EWT on our own sale.
+    {
+      withholdEwt: false, // We are the seller: output VAT only, no EWT on our own sale.
+      vatRate: await outputVatRate(), // company setting, never a per-sale choice
+    },
   );
 
   // A cash sale must record what was handed over. Guarding on `&& amountTendered`

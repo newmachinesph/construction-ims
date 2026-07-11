@@ -54,8 +54,8 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
   const facts: [string, string][] = [
     ["Category", row.categoryName],
     ["Unit of measure", uomLabel(row.uom)],
-    ["Standard cost", formatPHP(row.standardCost)],
-    ["Selling price", formatPHP(row.sellingPrice)],
+    ["Cost", formatPHP(row.standardCost)],
+    ["SRP / Retail price", formatPHP(row.sellingPrice)],
     ["VAT class", row.vatClass.replace("_", " ")],
     ["Reorder point", `${formatQty(row.reorderPoint)} ${uomLabel(row.uom)}`],
     ["Reorder qty", `${formatQty(row.reorderQty)} ${uomLabel(row.uom)}`],

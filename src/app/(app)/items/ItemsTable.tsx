@@ -18,6 +18,7 @@ interface ItemRow {
   name: string;
   uom: string;
   standardCost: string;
+  sellingPrice: string;
   reorderPoint: string;
   isWeatherSensitive: boolean;
   isActive: boolean;
@@ -83,7 +84,7 @@ export function ItemsTable() {
       </div>
 
       {isLoading ? (
-        <TableSkeleton rows={8} cols={6} />
+        <TableSkeleton rows={8} cols={7} />
       ) : isError ? (
         <div className="rounded-card border border-alert/40 bg-alert/5 px-4 py-10 text-center text-sm text-alert" role="alert">
           {error instanceof Error ? error.message : "Failed to load items."}
@@ -97,12 +98,13 @@ export function ItemsTable() {
                 <Th>Name</Th>
                 <Th>Category</Th>
                 <Th>UoM</Th>
-                <Th numeric>Standard cost</Th>
+                <Th numeric>Cost</Th>
+                <Th numeric>SRP</Th>
                 <Th numeric>Reorder pt.</Th>
               </THead>
               <TBody>
                 {rows.length === 0 ? (
-                  <EmptyRow colSpan={6}>{q ? "No items match your search." : "No items yet."}</EmptyRow>
+                  <EmptyRow colSpan={7}>{q ? "No items match your search." : "No items yet."}</EmptyRow>
                 ) : (
                   rows.map((r) => (
                     <Tr key={r.id}>
@@ -135,7 +137,14 @@ export function ItemsTable() {
                       </Td>
                       <Td muted>{r.categoryName}</Td>
                       <Td muted>{uomLabel(r.uom)}</Td>
-                      <Td numeric>{formatPHP(r.standardCost)}</Td>
+                      <Td numeric muted>{formatPHP(r.standardCost)}</Td>
+                      <Td numeric>
+                        {Number(r.sellingPrice) > 0 ? (
+                          formatPHP(r.sellingPrice)
+                        ) : (
+                          <span className="text-alert">Not set</span>
+                        )}
+                      </Td>
                       <Td numeric muted>
                         {formatQty(r.reorderPoint)}
                       </Td>

@@ -297,7 +297,13 @@ export const companySettings = pgTable("company_settings", {
   address: varchar("address", { length: 240 }),
   /** Philippine Contractors Accreditation Board licence number. */
   pcabLicenseNo: varchar("pcab_license_no", { length: 40 }),
+  /** Master switch: when false, sales charge no output VAT at all (non-VAT
+   *  taxpayer, e.g. below the PHP 3M threshold). */
   vatRegistered: boolean("vat_registered").notNull().default(true),
+  /** Output-VAT rate applied to VATABLE sale lines. 0.1200 = 12% (the statutory
+   *  PH rate). Configurable so the rate is a setting, not a recompile — but it is
+   *  a company-level setting, never a per-sale toggle at the till. */
+  vatRate: numeric("vat_rate", { precision: 6, scale: 4 }).notNull().default("0.1200"),
   /** BIR-designated Top Withholding Agent -> must withhold EWT on purchases. */
   isTopWithholdingAgent: boolean("is_top_withholding_agent").notNull().default(false),
   ...timestamps,

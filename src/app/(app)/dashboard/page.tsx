@@ -4,19 +4,56 @@ import { db } from "@/db";
 import { items, materialRequisitions, purchaseOrders } from "@/db/schema";
 import { requirePermissionPage, can } from "@/lib/auth/dal";
 import { lowStockItems, recentMovements, listStock } from "@/lib/services/stock";
-import { formatManila, formatPHP, formatQty, UOM_LABELS } from "@/lib/ph";
+import { salesReport, type Granularity } from "@/lib/services/salesReport";
+import { formatManila, formatPHP, formatQty, manilaToday, UOM_LABELS } from "@/lib/ph";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatTile } from "@/components/ui/StatTile";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Table, TableWrap, THead, TBody, Th, Tr, Td, EmptyRow } from "@/components/ui/Table";
+import { BarChart } from "@/components/charts/BarChart";
+import { RankedBars } from "@/components/charts/RankedBars";
+import { SalesRangeForm } from "./SalesRangeForm";
 
 function uomLabel(uom: string): string {
   return UOM_LABELS[uom as keyof typeof UOM_LABELS] ?? uom;
 }
 
-export default async function DashboardPage() {
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Trust nothing from the query string: fall back to a sane range. */
+function parseRange(sp: Record<string, string | string[] | undefined>) {
+  const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+  const today = manilaToday();
+  const rawFrom = one(sp.from);
+  const rawTo = one(sp.to);
+  const rawG = one(sp.granularity);
+
+  const to = rawTo && DATE_RE.test(rawTo) ? rawTo : today;
+  // Default window: the last 30 days.
+  const defaultFrom = new Date(`${to}T00:00:00Z`);
+  defaultFrom.setUTCDate(defaultFrom.getUTCDate() - 29);
+  const from =
+    rawFrom && DATE_RE.test(rawFrom) ? rawFrom : defaultFrom.toISOString().slice(0, 10);
+
+  const granularity: Granularity = rawG === "month" ? "month" : "day";
+  // A backwards range would silently return nothing; swap it instead.
+  return from <= to ? { from, to, granularity } : { from: to, to: from, granularity };
+}
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   await requirePermissionPage("stock:read");
-  const canCost = await can("report:cost");
+  const [canCost, canSeeSales, sp] = await Promise.all([
+    can("report:cost"),
+    can("sale:read"),
+    searchParams,
+  ]);
+
+  const { from, to, granularity } = parseRange(sp);
+  const report = canSeeSales ? await salesReport(from, to, granularity) : null;
 
   const [stock, lowStock, movements, activeSkuRows, openPoRows, pendingMrRows] = await Promise.all([
     listStock(),
@@ -66,6 +103,71 @@ export default async function DashboardPage() {
           icon={<PackageCheck className="size-5" />}
         />
       </div>
+
+      {/* Sales report — date-ranged, daily or monthly */}
+      {report ? (
+        <section className="flex flex-col gap-4 border-t border-line pt-6">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
+                Sales report
+              </h2>
+              <p className="mt-1 text-xs text-muted">
+                Posted sales only — a voided invoice is not revenue.
+              </p>
+            </div>
+            <SalesRangeForm from={from} to={to} granularity={granularity} />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <StatTile
+              label="Net sales"
+              value={formatPHP(report.totals.netSales)}
+              hint="Excluding output VAT"
+            />
+            <StatTile label="Invoices" value={report.totals.invoices} hint={`Avg ${formatPHP(report.totals.avgSale)}`} />
+            <StatTile label="Output VAT" value={formatPHP(report.totals.vat)} hint="Payable to the BIR" />
+            {canCost ? (
+              <StatTile
+                label="Gross margin"
+                value={formatPHP(report.totals.margin)}
+                hint={`${report.totals.marginPct.toFixed(1)}% of net sales`}
+              />
+            ) : (
+              <StatTile label="Gross sales" value={formatPHP(report.totals.gross)} hint="Including VAT" />
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
+            <div className="flex flex-col gap-2">
+              <h3 className="text-xs font-medium uppercase tracking-wide text-ink-soft">
+                Net sales by {granularity === "month" ? "month" : "day"}
+              </h3>
+              <BarChart
+                data={report.buckets.map((b) => ({
+                  label: b.period,
+                  value: b.netSales,
+                  note: `${b.invoices} invoice${b.invoices === 1 ? "" : "s"}`,
+                }))}
+                emptyMessage="No sales in this range."
+              />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <h3 className="text-xs font-medium uppercase tracking-wide text-ink-soft">
+                By category
+              </h3>
+              <RankedBars
+                data={report.byCategory.map((c) => ({
+                  name: c.name,
+                  value: c.netSales,
+                  note: `· ${formatQty(c.qty)}`,
+                }))}
+              />
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       {/* Low stock — reorder */}
       <section className="flex flex-col gap-3">
