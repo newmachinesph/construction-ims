@@ -172,6 +172,9 @@ async function dispatchedUnitCost(
 export interface AdjustmentLineInput {
   itemId: string;
   qtyDelta: string; // signed
+  /** Cost for a positive delta. Omit for cost-neutral (value at current average).
+   *  An opening-balance import must supply it — see the schema comment. */
+  unitCost?: string | null;
   remarks?: string;
 }
 
@@ -208,6 +211,7 @@ export async function createAdjustment(actor: SessionUser, input: CreateAdjustme
         adjustmentId: adj.id,
         itemId: l.itemId,
         qtyDelta: l.qtyDelta,
+        unitCost: l.unitCost ?? null,
         remarks: l.remarks,
       })),
     );
@@ -247,6 +251,9 @@ export async function approveAndPostAdjustment(actor: SessionUser, adjId: string
         warehouseId: adj.warehouseId,
         type: "ADJUSTMENT",
         quantity: line.qtyDelta, // signed; applyMovement respects the sign
+        // NULL stays cost-neutral (applyMovement values it at the current average).
+        // An import supplies a cost, so brand-new stock is not booked at PHP 0.
+        unitCost: line.unitCost ?? undefined,
         refType: "ADJUSTMENT",
         refId: adj.id,
         refNumber: adj.adjustmentNumber,
