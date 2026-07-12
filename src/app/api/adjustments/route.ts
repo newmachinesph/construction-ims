@@ -3,7 +3,7 @@ import { created, handler, ok, parseBody } from "@/lib/api";
 import { requirePermission } from "@/lib/auth/dal";
 import { createAdjustment, listAdjustments } from "@/lib/services/stock";
 import { adjustmentReasonEnum } from "@/db/schema";
-import { uuidSchema } from "@/lib/validation";
+import { moneySchema, uuidSchema } from "@/lib/validation";
 
 /** Signed, non-zero quantity delta (up to 3 dp). */
 const signedQty = z
@@ -16,6 +16,14 @@ const signedQty = z
 const lineSchema = z.object({
   itemId: uuidSchema,
   qtyDelta: signedQty,
+  /**
+   * Unit cost for a POSITIVE delta. Optional and empty-string-tolerant:
+   *   blank -> cost-neutral, value the stock at the warehouse's current moving
+   *            average (correct for a count variance — no money changed hands).
+   *   set   -> value it at this cost. Required in practice when adding the FIRST
+   *            stock of an item, whose average is still 0 — otherwise it books at 0.
+   */
+  unitCost: moneySchema.or(z.literal("")).optional(),
   remarks: z.string().trim().max(500).optional(),
 });
 
@@ -34,5 +42,13 @@ export const GET = handler(async () => {
 export const POST = handler(async (req) => {
   const actor = await requirePermission("adjustment:create");
   const input = await parseBody(req, createAdjustmentSchema);
-  return created(await createAdjustment(actor, input));
+
+  // A blank cost box means "cost-neutral", not "free". Collapse it to null so the
+  // service values the stock at the current moving average instead of PHP 0.
+  const lines = input.lines.map((l) => ({
+    ...l,
+    unitCost: l.unitCost && l.unitCost !== "" ? l.unitCost : null,
+  }));
+
+  return created(await createAdjustment(actor, { ...input, lines }));
 });

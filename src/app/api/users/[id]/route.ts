@@ -2,9 +2,11 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { handler, ok, parseBody } from "@/lib/api";
 import { requirePermission } from "@/lib/auth/dal";
-import { NotFoundError } from "@/lib/errors";
+import { ForbiddenError, NotFoundError } from "@/lib/errors";
 import { db } from "@/db";
 import { roleEnum, users } from "@/db/schema";
+import { emailSchema, uuidSchema } from "@/lib/validation";
+import { writeAudit } from "@/lib/services/ledger";
 
 const safeUserColumns = {
   id: users.id,
@@ -18,19 +20,59 @@ const safeUserColumns = {
 } as const;
 
 const updateUserSchema = z.object({
+  fullName: z.string().trim().min(1).max(160).optional(),
+  email: emailSchema.optional(),
   role: z.enum(roleEnum.enumValues).optional(),
   isActive: z.boolean().optional(),
 });
 
 export const PATCH = handler(async (req, ctx) => {
-  await requirePermission("user:write");
+  const actor = await requirePermission("user:write");
   const { id } = await ctx.params;
+  const userId = uuidSchema.parse(id);
   const body = await parseBody(req, updateUserSchema);
+
+  const target = await db.query.users.findFirst({ where: eq(users.id, userId) });
+  if (!target) throw new NotFoundError("User");
+
+  // The administrator's role is fixed. Demoting the admin — including an admin
+  // demoting themselves by mistake — can leave nobody able to grant roles back,
+  // and there is no password-reset or recovery flow to dig out of that.
+  if (target.role === "ADMIN" && body.role && body.role !== "ADMIN") {
+    throw new ForbiddenError("The administrator's role cannot be changed.");
+  }
+  if (target.role === "ADMIN" && body.isActive === false) {
+    throw new ForbiddenError("The administrator cannot be deactivated.");
+  }
+  if (target.id === actor.id && body.isActive === false) {
+    throw new ForbiddenError("You cannot deactivate your own account.");
+  }
+
   const [updated] = await db
     .update(users)
     .set({ ...body, updatedAt: new Date() })
-    .where(eq(users.id, id))
+    .where(eq(users.id, userId))
     .returning(safeUserColumns);
-  if (!updated) throw new NotFoundError("User");
+
+  await writeAudit(db, {
+    actorId: actor.id,
+    actorEmail: actor.email,
+    action: "USER_UPDATE",
+    entity: "user",
+    entityId: userId,
+    before: {
+      fullName: target.fullName,
+      email: target.email,
+      role: target.role,
+      isActive: target.isActive,
+    },
+    after: {
+      fullName: updated.fullName,
+      email: updated.email,
+      role: updated.role,
+      isActive: updated.isActive,
+    },
+  });
+
   return ok(updated);
 });

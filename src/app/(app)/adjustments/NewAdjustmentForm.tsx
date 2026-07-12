@@ -25,13 +25,15 @@ interface LineRow {
   key: string;
   itemId: string;
   qtyDelta: string;
+  /** Blank = cost-neutral (value at the current moving average). */
+  unitCost: string;
   remarks: string;
 }
 
 const REASONS = ["COUNT_VARIANCE", "DAMAGE", "PILFERAGE", "SPOILAGE", "CORRECTION"] as const;
 
 function emptyLine(): LineRow {
-  return { key: crypto.randomUUID(), itemId: "", qtyDelta: "", remarks: "" };
+  return { key: crypto.randomUUID(), itemId: "", qtyDelta: "", unitCost: "", remarks: "" };
 }
 
 interface NewAdjustmentFormProps {
@@ -85,6 +87,8 @@ export function NewAdjustmentForm({ warehouses, items }: NewAdjustmentFormProps)
       lines: validLines.map((l) => ({
         itemId: l.itemId,
         qtyDelta: l.qtyDelta,
+        // Blank stays blank: the server reads that as cost-neutral, not free.
+        unitCost: l.unitCost.trim() || undefined,
         remarks: l.remarks.trim() || undefined,
       })),
     });
@@ -146,19 +150,25 @@ export function NewAdjustmentForm({ warehouses, items }: NewAdjustmentFormProps)
             Add line
           </Button>
         </div>
-        <p className="text-xs text-muted">Qty delta is signed — negative writes stock off.</p>
+        <p className="text-xs text-muted">
+          Qty delta is signed — negative writes stock off. On a positive line, leave{" "}
+          <strong>unit cost</strong> blank for a count variance (the stock is valued at the current
+          average). Set it when you are adding an item&apos;s first stock — its average is still ₱0,
+          so a blank cost would book the stock at zero value.
+        </p>
 
         <TableWrap>
           <Table>
             <THead>
               <Th>Item</Th>
               <Th numeric>Qty delta</Th>
+              <Th numeric>Unit cost</Th>
               <Th>Line remarks</Th>
               <Th />
             </THead>
             <TBody>
               {lines.length === 0 ? (
-                <EmptyRow colSpan={4}>Add a line to get started.</EmptyRow>
+                <EmptyRow colSpan={5}>Add a line to get started.</EmptyRow>
               ) : (
                 lines.map((line) => {
                   const item = items.find((i) => i.id === line.itemId);
@@ -188,6 +198,29 @@ export function NewAdjustmentForm({ warehouses, items }: NewAdjustmentFormProps)
                           placeholder="e.g. -5 or 5"
                           className="text-right"
                         />
+                      </Td>
+                      <Td numeric className="min-w-32">
+                        {Number(line.qtyDelta) > 0 ? (
+                          <>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={line.unitCost}
+                              onChange={(e) => updateLine(line.key, { unitCost: e.target.value })}
+                              placeholder="Optional"
+                              className="text-right"
+                              aria-label={`Unit cost for ${item?.sku ?? "line"}`}
+                            />
+                            <p className="mt-1 text-xs text-muted">
+                              Blank = value at current average
+                            </p>
+                          </>
+                        ) : (
+                          // Outbound lines are always costed at the moving average;
+                          // there is no cost to enter.
+                          <span className="text-xs text-muted">—</span>
+                        )}
                       </Td>
                       <Td className="min-w-40">
                         <Input
