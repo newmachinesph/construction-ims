@@ -27,11 +27,29 @@ export interface CategorySlice {
   name: string;
   netSales: number;
   qty: number;
+  /** Cost of goods sold — the moving-average cost frozen on each sale line. */
+  cogs: number;
+  /** netSales − cogs. The "Net" that gets booked separately from COGS. */
+  margin: number;
+}
+
+/** One row per item sold in the range — the end-of-day "what went out" list. */
+export interface ItemSlice {
+  sku: string;
+  name: string;
+  category: string;
+  uom: string;
+  /** Pieces / bags / lengths sold. */
+  qty: number;
+  netSales: number;
+  cogs: number;
+  margin: number;
 }
 
 export interface SalesReport {
   buckets: SalesBucket[];
   byCategory: CategorySlice[];
+  byItem: ItemSlice[];
   totals: {
     netSales: number;
     vat: number;
@@ -63,7 +81,7 @@ export async function salesReport(
   // COGS lives on the sale lines, so it needs its own grouped query rather than
   // being joined into the header aggregate (which would multiply the header
   // money columns by the line count).
-  const [headers, lineCosts, byCategory] = await Promise.all([
+  const [headers, lineCosts, byCategory, byItem] = await Promise.all([
     db
       .select({
         period,
@@ -93,6 +111,7 @@ export async function salesReport(
         name: categories.name,
         netSales: sql<string>`coalesce(sum(${saleItems.lineTotal}), 0)`,
         qty: sql<string>`coalesce(sum(${saleItems.quantity}), 0)`,
+        cogs: sql<string>`coalesce(sum(${saleItems.quantity} * ${saleItems.unitCost}), 0)`,
       })
       .from(saleItems)
       .innerJoin(sales, eq(sales.id, saleItems.saleId))
@@ -100,6 +119,25 @@ export async function salesReport(
       .innerJoin(categories, eq(categories.id, items.categoryId))
       .where(POSTED_IN_RANGE(from, to))
       .groupBy(categories.name)
+      .orderBy(sql`sum(${saleItems.lineTotal}) desc`),
+
+    // Per-item detail: what actually went out the door, with its own cost.
+    db
+      .select({
+        sku: items.sku,
+        name: items.name,
+        category: categories.name,
+        uom: items.uom,
+        qty: sql<string>`coalesce(sum(${saleItems.quantity}), 0)`,
+        netSales: sql<string>`coalesce(sum(${saleItems.lineTotal}), 0)`,
+        cogs: sql<string>`coalesce(sum(${saleItems.quantity} * ${saleItems.unitCost}), 0)`,
+      })
+      .from(saleItems)
+      .innerJoin(sales, eq(sales.id, saleItems.saleId))
+      .innerJoin(items, eq(items.id, saleItems.itemId))
+      .innerJoin(categories, eq(categories.id, items.categoryId))
+      .where(POSTED_IN_RANGE(from, to))
+      .groupBy(items.sku, items.name, categories.name, items.uom)
       .orderBy(sql`sum(${saleItems.lineTotal}) desc`),
   ]);
 
@@ -127,11 +165,25 @@ export async function salesReport(
 
   return {
     buckets,
-    byCategory: byCategory.map((c) => ({
-      name: c.name,
-      netSales: Number(c.netSales),
-      qty: Number(c.qty),
-    })),
+    byCategory: byCategory.map((c) => {
+      const net = Number(c.netSales);
+      const cogs = Number(c.cogs);
+      return { name: c.name, netSales: net, qty: Number(c.qty), cogs, margin: net - cogs };
+    }),
+    byItem: byItem.map((i) => {
+      const net = Number(i.netSales);
+      const cogs = Number(i.cogs);
+      return {
+        sku: i.sku,
+        name: i.name,
+        category: i.category,
+        uom: i.uom,
+        qty: Number(i.qty),
+        netSales: net,
+        cogs,
+        margin: net - cogs,
+      };
+    }),
     totals: {
       netSales,
       vat: sum((b) => b.vat),
