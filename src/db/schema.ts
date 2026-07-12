@@ -672,6 +672,15 @@ export const stockAdjustmentItems = pgTable(
       .references(() => items.id, { onDelete: "restrict" }),
     /** Signed delta applied to qty_on_hand. */
     qtyDelta: qty("qty_delta").notNull(),
+    /**
+     * Unit cost for a POSITIVE delta. NULL = cost-neutral: value the found stock
+     * at the warehouse's current moving average (the right default for a count
+     * variance — no money changed hands).
+     *
+     * An opening-balance IMPORT must set it: a brand-new item has an average of
+     * zero, so a cost-neutral load would book the stock at PHP 0.
+     */
+    unitCost: money("unit_cost"),
     remarks: text("remarks"),
   },
   (t) => [

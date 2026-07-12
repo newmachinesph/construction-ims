@@ -1,0 +1,1 @@
+ALTER TABLE "stock_adjustment_items" ADD COLUMN "unit_cost" numeric(14, 2);

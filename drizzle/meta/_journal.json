@@ -71,6 +71,13 @@
       "when": 1783779478209,
       "tag": "0009_vat_rate_setting",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1783818287482,
+      "tag": "0010_adjustment_unit_cost",
+      "breakpoints": true
     }
   ]
 }
