@@ -1,12 +1,13 @@
-# BuildStock — Philippine Construction Inventory Management
+# JuanBuild IMS — Philippine Construction Inventory & POS
 
-A web-based inventory management system for construction firms in the
-Philippines. Multi-project, multi-warehouse stock control with BIR-aware
-tax handling, role-based access control, and separation-of-duties baked into
-every document flow.
+Inventory, procurement and counter sales for construction firms in the
+Philippines. Multi-project, multi-warehouse stock control with BIR-aware tax
+handling, role-based access control, and separation-of-duties baked into every
+document flow.
 
-Built with **Next.js 16** (App Router, React 19), **Drizzle ORM** on
-**PostgreSQL 18** (Docker), **Tailwind v4**, and a strictly black-and-white UI.
+**Next.js 16** (App Router, React 19) · **Drizzle ORM** on **PostgreSQL**
+(Neon in production, Docker locally) · **Tailwind v4** · a strictly
+black-and-white UI.
 
 ---
 
@@ -14,45 +15,74 @@ Built with **Next.js 16** (App Router, React 19), **Drizzle ORM** on
 
 Generic inventory apps miss what a PH construction firm actually needs:
 
-- **BIR compliance** — 12% VAT with per-line VATable / zero-rated / exempt
-  classification, 1% (goods) / 2% (services) expanded withholding tax for Top
-  Withholding Agents, TIN capture, and post-EOPT (RA 11976) document rules
-  where the **Sales Invoice** is the primary tax document and the Delivery
-  Receipt is supplementary.
-- **Anti-pilferage** — segregation of duties (requester ≠ approver ≠ receiver
-  ≠ issuer), an append-only stock ledger, and an immutable audit log.
+- **BIR compliance** — 12% VAT (configurable) with per-line VATable /
+  zero-rated / exempt classification, 1% (goods) / 2% (services) expanded
+  withholding tax for Top Withholding Agents, TIN capture, gapless document
+  serials, and post-EOPT (RA 11976) rules where the **Sales Invoice** is the
+  primary tax document and the Delivery Receipt is supplementary.
+- **Anti-pilferage** — segregation of duties (requester ≠ approver ≠ receiver ≠
+  issuer), an append-only stock ledger, and an immutable audit log.
 - **Site reality** — central warehouse vs jobsite _bodega_, stock transfers,
   weather-sensitive buffer stock for the June–November typhoon season, and PH
   units (cement bags, rebar lengths, board feet, cu.m).
 
-The domain rules below were distilled from sourced BIR/PH research (kept locally
-in `docs/PH-RESEARCH.md`, not committed).
+---
+
+## What it does
+
+**Procurement & stock**
+- Purchase orders → approval → goods receipt → stock in, with over-receipt caps
+  enforced inside the `UPDATE` (not against a cached read).
+- Material requisitions → approval + stock reservation → issuance to site.
+- Transfers between warehouses (dispatch → in-transit → receive), valued at the
+  cost the goods *left* at, not the source's later average.
+- Stock adjustments (count variance, damage, pilferage, spoilage) — always a
+  second pair of eyes before they post.
+- **Bulk stock import** from CSV, creating any items that don't exist yet.
+
+**Counter sales (POS)**
+- A register: search, cart, live VAT totals, cash tender + change.
+- Posts a gapless BIR **Sales Invoice**, deducts stock, and freezes the
+  moving-average cost onto the sale line so margin stays truthful later.
+- **Void** a mis-rung sale: the invoice is *cancelled*, never deleted (the serial
+  stays consumed), and stock is restored at the cost it sold at.
+- Printable invoice — "Save as PDF" in the print dialog downloads `SI-000123.pdf`.
+
+**Reporting**
+- Dashboard sales report over a date range, daily or monthly, with inline-SVG
+  charts (no chart library). Voided invoices are excluded from revenue.
+- Inventory valuation, low stock, movement ledger — with CSV export.
+- Costs and margins are gated behind `report:cost`, so the warehouseman who mans
+  the counter never sees them.
 
 ---
 
 ## Quick start
 
-Prerequisites: Node 20+, Docker Desktop.
+Prerequisites: **Node 22** (matches CI), Docker Desktop (for a local DB).
 
 ```bash
 # 1. Install
-npm install
+npm ci
 
-# 2. Environment — copy the example and generate a session secret
-cp .env.example .env
-node -e "console.log('SESSION_SECRET='+require('crypto').randomBytes(32).toString('base64'))"
-#   paste the line into .env
+# 2. Environment
+cp .env.example .env      # then fill in DATABASE_URL and the R2_* vars
 
-# 3. Database — Postgres 18 in Docker on port 5433
+# 3. Database — Postgres in Docker on port 5433 (or point DATABASE_URL at Neon)
 docker compose up -d
 
-# 4. Schema + seed (41-item PH catalog, 8 role accounts)
+# 4. Schema + seed (266-item PH catalog, 8 role accounts)
 npm run db:migrate
 npm run db:seed
 
 # 5. Run
-npm run dev            # http://localhost:3000
+npm run dev               # http://localhost:3000
 ```
+
+> **Node version matters.** CI and Vercel run Node 22 (npm 10). Generating
+> `package-lock.json` on Node 24 (npm 11) produces a tree npm 10 rejects with
+> `npm ci` → `EUSAGE`. If you change dependencies, regenerate the lock with
+> `npx npm@10 install --package-lock-only`, or move CI and Vercel to Node 24.
 
 ### Demo accounts
 
@@ -60,12 +90,12 @@ Every account uses the password **`Password123!`**.
 
 | Email | Role | Can |
 |---|---|---|
-| `admin@ims.ph` | Administrator | everything |
+| `admin@ims.ph` | Administrator | everything (but still cannot approve their own document) |
 | `pm@ims.ph` | Project Manager | approve POs / MRs / adjustments |
 | `procurement@ims.ph` | Procurement Officer | create POs, manage suppliers (cannot approve own PO) |
-| `bodega@ims.ph` | Warehouseman | receive, issue, transfer (no costs, no approvals) |
+| `bodega@ims.ph` | Warehouseman | receive, issue, transfer, man the POS (no costs, no approvals) |
 | `engineer@ims.ph` | Site Engineer | raise requisitions, confirm deliveries |
-| `accountant@ims.ph` | Accountant | costs, VAT/EWT, audit (no stock movement) |
+| `accountant@ims.ph` | Accountant | costs, VAT/EWT, audit, void sales (no stock movement) |
 | `auditor@ims.ph` | Auditor | read-only + audit log |
 | `viewer@ims.ph` | Viewer | dashboards only |
 
@@ -76,16 +106,21 @@ Every account uses the password **`Password123!`**.
 ```
 src/
 ├── app/
-│   ├── (app)/            # authed dashboard (layout guards + sidebar)
-│   ├── api/              # REST route handlers (validate → authorize → service)
+│   ├── (app)/            # authed shell (layout guards + sidebar)
+│   ├── api/              # route handlers (validate → authorize → service)
 │   └── login/            # public
+├── components/
+│   ├── charts/           # inline-SVG bar + ranked bars (no chart library)
+│   └── ui/               # monochrome design system
 ├── db/
-│   ├── schema.ts         # Drizzle schema (24 tables)
-│   └── seed.ts           # PH materials catalog + demo users
+│   ├── schema.ts         # Drizzle schema (28 tables)
+│   ├── seed.ts           # PH materials catalog + demo users
+│   └── reprice.ts        # per-category markup rate card (repeatable)
 ├── lib/
 │   ├── auth/             # bcrypt, opaque DB sessions, DAL guards
 │   ├── services/         # domain logic: procurement, receiving, requisition,
-│   │                     #   stock, ledger (the stock engine), costing
+│   │                     #   stock, sales, salesReport, stockImport, ledger
+│   │                     #   (the stock engine), costing
 │   ├── ph.ts             # VAT / EWT / TIN / units / money (centavo-safe)
 │   ├── rbac.ts           # permission matrix + separation-of-duties rules
 │   └── api.ts            # response envelope + zod validation wrapper
@@ -98,14 +133,23 @@ src/
   (`src/lib/ph.ts`) and stored as `numeric(14,2)`.
 - **The stock ledger is append-only.** `stock_movements` is never updated or
   deleted; reversals are new rows. `applyMovement` takes a `FOR UPDATE` lock on
-  the stock row so concurrent issues cannot oversell.
+  the stock row, so concurrent issues cannot oversell — and it returns the cost
+  it posted at, so callers never re-read it and race.
 - **Costing is weighted moving-average** (PAS 2 / PFRS): only inbound movements
-  move the average; issues are costed at the prevailing average.
+  move the average; outbound is costed at the prevailing average. A positive
+  adjustment is cost-neutral (found stock is valued at the current average) —
+  except an import, which must carry a cost, or brand-new stock books at ₱0.
 - **Document numbers are gapless** per BIR expectation, allocated with
   `UPDATE ... RETURNING` inside the same transaction as the document insert.
+- **Tax classification is never client-supplied.** A sale's VAT class is read
+  from the item master; the VAT *rate* is a company setting, never a switch at
+  the till. Dropping VAT on VATable goods is under-remittance to the BIR.
 - **Two independent gates** protect every mutation: role permission
   (`hasPermission`) and per-document separation of duties (`assertCan*`) — and
   ADMIN is _not_ exempt from the latter.
+- **The database is the last line of defence.** CHECK constraints reject
+  negative money, zero quantities, and a cash tender below the total, so a bug
+  above the DB cannot write a corrupt invoice.
 
 ---
 
@@ -116,39 +160,85 @@ Procurement:  PO (procurement) → approve (PM) → GRN (warehouseman) → stock
 Requisition:  MR (engineer) → approve+reserve (PM) → issue (warehouseman) → stock ↓
 Transfer:     dispatch (out) → in-transit → receive (in)   # warehouse ↔ bodega
 Adjustment:   count/damage/pilferage → approve by another user → stock ±
+Import:       CSV → draft adjustment → approve by another user → stock ↑
+Sale (POS):   ring up → post SI → stock ↓        (void → cancel + restore stock)
 ```
 
-Each arrow is a role boundary. The service layer refuses to let one person
-cross two of them on the same document.
+Each arrow is a role boundary. The service layer refuses to let one person cross
+two of them on the same document — including the person who imports stock, who
+cannot approve their own import.
+
+---
+
+## Stock import
+
+`Stock on hand → Import stock`. Download the CSV template, fill it, upload.
+
+- Rows for unknown SKUs **create the item**; rows for existing SKUs top up stock.
+- It raises a **draft adjustment** — it never writes stock directly. A second
+  person approves it. Conjuring inventory from a spreadsheet is exactly what the
+  approval control exists to prevent.
+- **All-or-nothing**: one bad row rejects the whole file, with per-row errors
+  quoting the spreadsheet line number. A half-applied import is worse than a
+  rejected one.
+
+CSV rather than XLSX on purpose: real `.xlsx` needs a parser dependency for no
+extra capability, and Excel opens and saves CSV natively.
 
 ---
 
 ## Photos (Cloudflare R2)
 
-Delivery-proof photos attach to a goods receipt; the `item` entity is wired for
-material photos too. Files live in **Cloudflare R2** (S3-compatible).
+Delivery-proof photos attach to a goods receipt; items carry material photos.
+Files live in **Cloudflare R2** (S3-compatible).
 
-- Upload is **proxied through the API** (`POST /api/attachments`, multipart) —
-  no bucket CORS needed, and every upload is permission-checked first
-  (`grn:create` for delivery photos).
+- Upload is **proxied through the API** (`POST /api/attachments`, multipart) — no
+  bucket CORS needed, and every upload is permission-checked first.
 - Images are **private**: they stream back through an auth-gated route
-  (`GET /api/attachments/[id]/raw`), not a public URL, so photos follow the
-  same RBAC as the rest of the system.
-- Configure the `R2_*` vars in `.env` (see `.env.example`). Without them, the
-  upload button reports storage-not-configured instead of crashing.
+  (`GET /api/attachments/[id]/raw`), so photos follow the same RBAC as the rest
+  of the system. There is no public bucket URL.
+- Without the `R2_*` vars the upload button reports storage-not-configured
+  instead of crashing.
 
-Only images are accepted (png/jpg/webp/gif), 10 MB max.
+Images only (png/jpg/webp/gif), 10 MB max.
+
+---
+
+## Environment
+
+See `.env.example`. The full required set is five variables:
+
+```
+DATABASE_URL            # Neon: use the POOLED (-pooler) host, keep sslmode=require
+R2_ENDPOINT
+R2_BUCKET
+R2_ACCESS_KEY_ID
+R2_SECRET_ACCESS_KEY
+```
+
+Don't set `NODE_ENV` by hand — the build and host set it. There is no
+`SESSION_SECRET`: sessions are opaque random tokens whose SHA-256 hash is stored,
+so there is nothing to sign with.
+
+On **Vercel**, `.env.production` is not read — paste these into
+Project → Settings → Environment Variables.
+
+---
 
 ## Testing
 
 ```bash
-npm test          # unit: tax, units, RBAC, costing, separation of duties
-npm run test:e2e  # e2e: login, RBAC, PO→GRN→stock, MR→issue (needs DB seeded + dev server)
+npm test          # unit: tax, units, RBAC, costing, movement direction
+npm run test:e2e  # e2e: login, RBAC, PO→GRN→stock, MR→issue (needs a seeded DB)
 ```
 
-Unit tests are pure and need no database. E2E tests drive the real API with the
+Unit tests are pure and need no database. E2E drives the real API with the
 correct role for each step, proving both the happy path (stock actually moves)
 and that a user cannot approve their own document.
+
+CI (`.github/workflows/ci.yml`) runs typecheck, lint and unit tests on Node 22.
+E2E is not in CI: it needs a live Postgres, a seeded DB, R2 credentials and a
+browser.
 
 ---
 
@@ -159,8 +249,11 @@ and that a user cannot approve their own document.
 | `npm run dev` | Next dev server (Turbopack) |
 | `npm run build` | Production build |
 | `npm run typecheck` | `tsc --noEmit` |
+| `npm run lint` | ESLint |
 | `npm run db:migrate` | Apply Drizzle migrations |
+| `npm run db:generate` | Generate a migration from `schema.ts` |
 | `npm run db:seed` | Seed catalog + users (idempotent) |
+| `npm run db:reprice` | Set selling prices from cost via a per-category rate card (`-- --dry` to preview) |
 | `npm run db:reset` | Drop, recreate, migrate, seed |
 | `npm test` / `npm run test:e2e` | Unit / E2E |
 
@@ -169,13 +262,18 @@ and that a user cannot approve their own document.
 ## Compliance notes & scope
 
 - Tax rates and document rules reflect BIR issuances through mid-2026 (VAT 12%,
-  EWT 1%/2%, EOPT invoice-primary, 5-year record retention). Confirm current
-  ATC codes and TWA status with your accountant before filing.
-- The **Data Privacy Act (RA 10173)** applies to the employee and supplier PII
-  stored here: access is role-scoped and every action is audited. Appoint a DPO
-  and complete NPC registration if your headcount or data volume requires it.
-- e-invoicing (EIS) is not yet mandatory for SMEs; invoice data is stored
-  structured so onboarding later is cheap.
+  EWT 1%/2%, EOPT invoice-primary, 5-year record retention). Confirm current ATC
+  codes and TWA status with your accountant before filing.
+- The POS issues a compliant **Sales Invoice** with output VAT, but it is **not a
+  BIR-accredited POS machine**: there are no X/Z readings, no e-journal and no
+  accumulated grand total. Machine accreditation is a separate undertaking.
+- Senior-citizen / PWD statutory discounts are **not** implemented.
+- The **Data Privacy Act (RA 10173)** applies to the employee, supplier and
+  customer PII stored here: access is role-scoped and every action is audited.
+  Appoint a DPO and complete NPC registration if your headcount or data volume
+  requires it.
 
 Not in scope: payroll, accounting GL, DOLE/OSH safety programs, PCAB licensing
-workflow (the firm's PCAB number is a settings field only).
+workflow (the firm's PCAB number is a settings field only), and IP-based login
+rate limiting (per-account lockout exists; a distributed credential-stuffing
+throttle does not).
