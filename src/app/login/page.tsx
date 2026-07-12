@@ -28,7 +28,7 @@ export default function LoginPage() {
               name="email"
               type="email"
               autoComplete="username"
-              placeholder="admin@ims.ph"
+              placeholder="you@company.com"
               required
             />
           </Field>
@@ -48,17 +48,6 @@ export default function LoginPage() {
             {pending ? "Signing in…" : "Sign in"}
           </Button>
         </form>
-
-        <div className="mt-4 rounded-md border border-line bg-surface-2 px-4 py-3 text-xs leading-relaxed text-muted">
-          <p className="font-medium text-ink-soft">Demo accounts</p>
-          <p className="mt-1">
-            <span className="tabular text-ink">admin@ims.ph</span> · pm@ims.ph · procurement@ims.ph ·
-            bodega@ims.ph · engineer@ims.ph · accountant@ims.ph · auditor@ims.ph · viewer@ims.ph
-          </p>
-          <p className="mt-1">
-            Password for every account: <span className="tabular text-ink">Password123!</span>
-          </p>
-        </div>
       </div>
     </div>
   );
