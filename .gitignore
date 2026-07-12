@@ -41,6 +41,12 @@ yarn-error.log*
 next-env.d.ts
 
 # AI-orchestration generated artifacts (not part of the application source)
+CLAUDE.md
+AGENTS.md
+.claude/
+.impeccable/
+.cursor/
+.aider*
 /docs/PH-RESEARCH.md
 /screenshots/
 /test-results/
