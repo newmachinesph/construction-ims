@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { asc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { created, handler, ok, parseBody, parseQuery } from "@/lib/api";
 import { requirePermission } from "@/lib/auth/dal";
 import { db } from "@/db";
@@ -37,12 +37,32 @@ const createItemSchema = z.object({
   isWeatherSensitive: z.boolean().optional(),
 });
 
-const listQuerySchema = paginationSchema.extend({ q: z.string().trim().optional() });
+/** Whitelisted sortable columns — never order by a client-supplied expression. */
+const SORT_COLUMNS = {
+  sku: items.sku,
+  name: items.name,
+  category: categories.name,
+  cost: items.standardCost,
+  srp: items.sellingPrice,
+  reorder: items.reorderPoint,
+} as const;
+
+const listQuerySchema = paginationSchema.extend({
+  q: z.string().trim().optional(),
+  sort: z.enum(["sku", "name", "category", "cost", "srp", "reorder"]).optional(),
+  dir: z.enum(["asc", "desc"]).default("asc"),
+  categoryId: uuidSchema.optional(),
+});
 
 export const GET = handler(async (req) => {
   await requirePermission("item:read");
-  const { page, pageSize, q } = parseQuery(req.url, listQuerySchema);
-  const where = q ? or(ilike(items.sku, `%${q}%`), ilike(items.name, `%${q}%`)) : undefined;
+  const { page, pageSize, q, sort, dir, categoryId } = parseQuery(req.url, listQuerySchema);
+  const where = and(
+    q ? or(ilike(items.sku, `%${q}%`), ilike(items.name, `%${q}%`)) : undefined,
+    categoryId ? eq(items.categoryId, categoryId) : undefined,
+  );
+  const sortCol = SORT_COLUMNS[sort ?? "name"];
+  const orderBy = dir === "desc" ? desc(sortCol) : asc(sortCol);
 
   const [rows, [{ total }]] = await Promise.all([
     db
@@ -61,7 +81,7 @@ export const GET = handler(async (req) => {
       .from(items)
       .innerJoin(categories, eq(categories.id, items.categoryId))
       .where(where)
-      .orderBy(asc(items.name))
+      .orderBy(orderBy, asc(items.name))
       .limit(pageSize)
       .offset((page - 1) * pageSize),
     db.select({ total: sql<number>`count(*)::int` }).from(items).where(where),

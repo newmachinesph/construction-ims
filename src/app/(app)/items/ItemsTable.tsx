@@ -6,11 +6,14 @@ import { Loader2 } from "lucide-react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { Table, TableWrap, THead, TBody, Th, Tr, Td, EmptyRow } from "@/components/ui/Table";
+import { SortableTh, nextSort, type SortDir } from "@/components/ui/SortableTh";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
 import { formatPHP, formatQty, UOM_LABELS } from "@/lib/ph";
 
 const PAGE_SIZE = 25;
+
+type SortKey = "sku" | "name" | "category" | "cost" | "srp" | "reorder";
 
 interface ItemRow {
   id: string;
@@ -36,19 +39,31 @@ function uomLabel(uom: string): string {
   return UOM_LABELS[uom as keyof typeof UOM_LABELS] ?? uom;
 }
 
-async function fetchItems(page: number, q: string): Promise<ItemsPage> {
+async function fetchItems(
+  page: number,
+  q: string,
+  sort: { key: SortKey; dir: SortDir } | null,
+  categoryId: string,
+): Promise<ItemsPage> {
   const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
   if (q) params.set("q", q);
+  if (sort) {
+    params.set("sort", sort.key);
+    params.set("dir", sort.dir);
+  }
+  if (categoryId) params.set("categoryId", categoryId);
   const res = await fetch(`/api/items?${params.toString()}`);
   const json = await res.json();
   if (!res.ok || !json.ok) throw new Error(json?.error ?? "Failed to load items.");
   return json.data as ItemsPage;
 }
 
-export function ItemsTable() {
+export function ItemsTable({ categories }: { categories: { id: string; name: string }[] }) {
   const [search, setSearch] = useState("");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
+  const [sort, setSort] = useState<{ key: SortKey; dir: SortDir } | null>(null);
+  const [categoryId, setCategoryId] = useState("");
 
   // Debounce the search box into `q`, and reset to page 1 on a new query.
   useEffect(() => {
@@ -60,8 +75,8 @@ export function ItemsTable() {
   }, [search]);
 
   const { data, isLoading, isFetching, isError, error } = useQuery({
-    queryKey: ["items", page, q],
-    queryFn: () => fetchItems(page, q),
+    queryKey: ["items", page, q, sort, categoryId],
+    queryFn: () => fetchItems(page, q, sort, categoryId),
     placeholderData: keepPreviousData,
   });
 
@@ -72,10 +87,39 @@ export function ItemsTable() {
   const hasPrev = page > 1;
   const hasNext = page * PAGE_SIZE < total;
 
+  const sortBtn = (key: SortKey, label: string, numeric?: boolean) => (
+    <SortableTh
+      label={label}
+      numeric={numeric}
+      active={sort?.key === key}
+      dir={sort?.key === key ? sort.dir : "asc"}
+      onSort={() => {
+        setSort((s) => nextSort(s, key));
+        setPage(1);
+      }}
+    />
+  );
+
   return (
     <section className="flex flex-col gap-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <SearchInput value={search} onChange={setSearch} placeholder="Search SKU or name…" />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <SearchInput value={search} onChange={setSearch} placeholder="Search SKU or name…" />
+          <select
+            value={categoryId}
+            onChange={(e) => {
+              setCategoryId(e.target.value);
+              setPage(1);
+            }}
+            aria-label="Filter by category"
+            className="h-9 rounded-input border border-line bg-surface px-2 text-sm text-ink focus:border-line-strong focus:outline-none"
+          >
+            <option value="">All categories</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
         {isFetching ? (
           <p className="flex items-center gap-1.5 text-xs text-muted">
             <Loader2 className="size-3.5 animate-spin" /> Updating…
@@ -94,17 +138,19 @@ export function ItemsTable() {
           <TableWrap>
             <Table>
               <THead>
-                <Th>SKU</Th>
-                <Th>Name</Th>
-                <Th>Category</Th>
+                {sortBtn("sku", "SKU")}
+                {sortBtn("name", "Name")}
+                {sortBtn("category", "Category")}
                 <Th>UoM</Th>
-                <Th numeric>Cost</Th>
-                <Th numeric>SRP</Th>
-                <Th numeric>Reorder pt.</Th>
+                {sortBtn("cost", "Cost", true)}
+                {sortBtn("srp", "SRP", true)}
+                {sortBtn("reorder", "Reorder pt.", true)}
               </THead>
               <TBody>
                 {rows.length === 0 ? (
-                  <EmptyRow colSpan={7}>{q ? "No items match your search." : "No items yet."}</EmptyRow>
+                  <EmptyRow colSpan={7}>
+                    {q || categoryId ? "No items match your search." : "No items yet."}
+                  </EmptyRow>
                 ) : (
                   rows.map((r) => (
                     <Tr key={r.id}>

@@ -10,7 +10,7 @@ export default async function ItemsPage() {
   await requirePermissionPage("item:read");
   const canWrite = await can("item:write");
 
-  // Only the create form's category select needs server data; the table fetches
+  // Categories feed the create form and the table's filter; the table fetches
   // its own rows client-side (TanStack Query) with server pagination + search.
   const categoryRows = await db
     .select({ id: categories.id, name: categories.name })
@@ -24,7 +24,7 @@ export default async function ItemsPage() {
         description="Material catalog — SKUs, units of measure, and reorder levels."
       />
       {canWrite ? <ItemForm categories={categoryRows} /> : null}
-      <ItemsTable />
+      <ItemsTable categories={categoryRows} />
     </>
   );
 }
