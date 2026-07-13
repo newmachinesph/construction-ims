@@ -199,8 +199,20 @@ export function assertCanApproveMr(actorId: string, mr: { requestedBy: string })
   );
 }
 
-/** Approving a stock adjustment you raised — the pilferage cover-up path. */
-export function assertCanApproveAdjustment(actorId: string, adj: { createdBy: string }): void {
+/**
+ * Approving a stock adjustment you raised — the pilferage cover-up path.
+ *
+ * By default the creator can never approve their own adjustment, ADMIN included.
+ * A single-admin deployment can opt out of THIS one check via `allowSelfApprove`
+ * (backed by a company setting). The caller only ever sets it for an ADMIN actor,
+ * so every other role stays bound by the creator≠approver rule regardless.
+ */
+export function assertCanApproveAdjustment(
+  actorId: string,
+  adj: { createdBy: string },
+  options: { allowSelfApprove?: boolean } = {},
+): void {
+  if (options.allowSelfApprove) return;
   assertSeparationOfDuties(
     actorId,
     [adj.createdBy],

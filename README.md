@@ -90,7 +90,7 @@ Every account uses the password **`Password123!`**.
 
 | Email | Role | Can |
 |---|---|---|
-| `admin@ims.ph` | Administrator | everything (but still cannot approve their own document) |
+| `admin@ims.ph` | Administrator | everything (still cannot approve their own document — except own stock adjustments, if enabled in Settings for single-admin setups) |
 | `pm@ims.ph` | Project Manager | approve POs / MRs / adjustments |
 | `procurement@ims.ph` | Procurement Officer | create POs, manage suppliers (cannot approve own PO) |
 | `bodega@ims.ph` | Warehouseman | receive, issue, transfer, man the POS (no costs, no approvals) |

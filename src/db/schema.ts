@@ -306,6 +306,14 @@ export const companySettings = pgTable("company_settings", {
   vatRate: numeric("vat_rate", { precision: 6, scale: 4 }).notNull().default("0.1200"),
   /** BIR-designated Top Withholding Agent -> must withhold EWT on purchases. */
   isTopWithholdingAgent: boolean("is_top_withholding_agent").notNull().default(false),
+  /** Escape hatch for single-admin deployments: when true, an ADMIN may approve a
+   *  stock adjustment they created themselves (e.g. their own CSV opening-balance
+   *  import), bypassing the creator≠approver rule. Off by default — segregation of
+   *  duties stays the safer stance for any team with more than one operator, and
+   *  this only ever loosens the check for ADMIN, never for other roles. */
+  allowAdminSelfApproveAdjustment: boolean("allow_admin_self_approve_adjustment")
+    .notNull()
+    .default(false),
   ...timestamps,
 });
 
