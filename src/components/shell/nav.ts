@@ -15,6 +15,7 @@ import {
   Receipt,
   ScrollText,
   Settings,
+  ShieldCheck,
   ShoppingCart,
   SlidersHorizontal,
   Users,
@@ -49,5 +50,6 @@ export const NAV: readonly NavItem[] = [
   { href: "/reports", label: "Reports", icon: BarChart3, permission: NAV_PERMISSIONS.reports },
   { href: "/audit", label: "Audit log", icon: ScrollText, permission: NAV_PERMISSIONS.audit },
   { href: "/users", label: "Users", icon: Users, permission: NAV_PERMISSIONS.users },
+  { href: "/roles", label: "Roles", icon: ShieldCheck, permission: NAV_PERMISSIONS.roles },
   { href: "/settings", label: "Settings", icon: Settings, permission: NAV_PERMISSIONS.settings },
 ];

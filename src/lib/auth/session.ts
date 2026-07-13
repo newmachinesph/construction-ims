@@ -3,8 +3,8 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { and, eq, gt, lt } from "drizzle-orm";
 import { db } from "@/db";
-import { sessions, users } from "@/db/schema";
-import type { Role } from "@/db/schema";
+import { roles, sessions, users } from "@/db/schema";
+import type { Permission } from "@/lib/rbac";
 import { SESSION_COOKIE } from "./session-cookie";
 
 export { SESSION_COOKIE };
@@ -19,7 +19,13 @@ export interface SessionUser {
   id: string;
   email: string;
   fullName: string;
-  role: Role;
+  /** The user's role key (a row in `roles`). */
+  role: string;
+  /** Display label for that role, resolved from the DB. */
+  roleLabel: string;
+  /** The role's permissions, resolved live on every request. Editing the role
+   *  takes effect immediately — no re-login needed. */
+  permissions: Permission[];
 }
 
 /** The cookie carries the raw token; the DB stores only its SHA-256. */
@@ -80,6 +86,8 @@ export async function readSession(): Promise<SessionUser | null> {
       email: users.email,
       fullName: users.fullName,
       role: users.role,
+      roleLabel: roles.label,
+      permissions: roles.permissions,
       isActive: users.isActive,
       expiresAt: sessions.expiresAt,
       createdAt: sessions.createdAt,
@@ -87,6 +95,7 @@ export async function readSession(): Promise<SessionUser | null> {
     })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
+    .innerJoin(roles, eq(roles.key, users.role))
     .where(and(eq(sessions.tokenHash, hashToken(token)), gt(sessions.expiresAt, new Date())))
     .limit(1);
 
@@ -105,7 +114,14 @@ export async function readSession(): Promise<SessionUser | null> {
     await slideExpiry(row.tokenHash, absoluteExpiry);
   }
 
-  return { id: row.userId, email: row.email, fullName: row.fullName, role: row.role };
+  return {
+    id: row.userId,
+    email: row.email,
+    fullName: row.fullName,
+    role: row.role,
+    roleLabel: row.roleLabel,
+    permissions: (row.permissions ?? []) as Permission[],
+  };
 }
 
 async function slideExpiry(tokenHash: string, absoluteExpiry: number): Promise<void> {

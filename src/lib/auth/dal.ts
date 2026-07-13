@@ -23,7 +23,7 @@ export async function requireUser(): Promise<SessionUser> {
 
 export async function requirePermission(permission: Permission): Promise<SessionUser> {
   const user = await requireUser();
-  if (!hasPermission(user.role, permission)) {
+  if (!hasPermission(user.permissions, permission)) {
     throw new ForbiddenError(`Missing permission: ${permission}`);
   }
   return user;
@@ -38,12 +38,12 @@ export async function requireUserPage(): Promise<SessionUser> {
 
 export async function requirePermissionPage(permission: Permission): Promise<SessionUser> {
   const user = await requireUserPage();
-  if (!hasPermission(user.role, permission)) redirect("/forbidden");
+  if (!hasPermission(user.permissions, permission)) redirect("/forbidden");
   return user;
 }
 
 /** Convenience for conditional rendering. Never the only gate on a mutation. */
 export async function can(permission: Permission): Promise<boolean> {
   const user = await getCurrentUser();
-  return user ? hasPermission(user.role, permission) : false;
+  return user ? hasPermission(user.permissions, permission) : false;
 }

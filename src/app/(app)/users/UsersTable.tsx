@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/Button";
 import { Table, TableWrap, THead, TBody, Th, Tr, Td, EmptyRow } from "@/components/ui/Table";
 import { api } from "@/components/ui/api";
 import { formatManila } from "@/lib/ph";
-import { ROLE_LABELS } from "@/lib/rbac";
 
 interface UserRow {
   id: string;
@@ -20,14 +19,23 @@ interface UserRow {
   lastLoginAt: Date | null;
 }
 
-const ROLE_OPTIONS = Object.entries(ROLE_LABELS);
-
-function roleLabel(role: string): string {
-  return ROLE_LABELS[role as keyof typeof ROLE_LABELS] ?? role;
+interface RoleOption {
+  key: string;
+  label: string;
 }
 
-export function UsersTable({ rows, canWrite }: { rows: UserRow[]; canWrite: boolean }) {
+export function UsersTable({
+  rows,
+  roles,
+  canWrite,
+}: {
+  rows: UserRow[];
+  roles: RoleOption[];
+  canWrite: boolean;
+}) {
   const router = useRouter();
+  const roleLabels = new Map(roles.map((r) => [r.key, r.label]));
+  const roleLabel = (role: string): string => roleLabels.get(role) ?? role;
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -119,9 +127,9 @@ export function UsersTable({ rows, canWrite }: { rows: UserRow[]; canWrite: bool
                           onChange={(e) => updateUser(u.id, { role: e.target.value })}
                           className="h-8 w-auto py-0 text-xs"
                         >
-                          {ROLE_OPTIONS.map(([value, label]) => (
-                            <option key={value} value={value}>
-                              {label}
+                          {roles.map((r) => (
+                            <option key={r.key} value={r.key}>
+                              {r.label}
                             </option>
                           ))}
                         </Select>

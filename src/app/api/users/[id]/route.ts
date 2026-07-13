@@ -2,9 +2,10 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { handler, ok, parseBody } from "@/lib/api";
 import { requirePermission } from "@/lib/auth/dal";
-import { ForbiddenError, NotFoundError } from "@/lib/errors";
+import { BusinessRuleError, ForbiddenError, NotFoundError } from "@/lib/errors";
 import { db } from "@/db";
-import { roleEnum, users } from "@/db/schema";
+import { users } from "@/db/schema";
+import { roleExists } from "@/lib/services/roles";
 import { emailSchema, uuidSchema } from "@/lib/validation";
 import { writeAudit } from "@/lib/services/ledger";
 
@@ -22,7 +23,7 @@ const safeUserColumns = {
 const updateUserSchema = z.object({
   fullName: z.string().trim().min(1).max(160).optional(),
   email: emailSchema.optional(),
-  role: z.enum(roleEnum.enumValues).optional(),
+  role: z.string().trim().min(1).max(40).optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -46,6 +47,9 @@ export const PATCH = handler(async (req, ctx) => {
   }
   if (target.id === actor.id && body.isActive === false) {
     throw new ForbiddenError("You cannot deactivate your own account.");
+  }
+  if (body.role && body.role !== target.role && !(await roleExists(body.role))) {
+    throw new BusinessRuleError(`Unknown role: ${body.role}`);
   }
 
   const [updated] = await db

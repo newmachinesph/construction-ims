@@ -32,16 +32,9 @@ const timestamps = {
 
 /* ------------------------------- enums ------------------------------ */
 
-export const roleEnum = pgEnum("role", [
-  "ADMIN", // owner / system administrator
-  "PROJECT_MANAGER",
-  "PROCUREMENT_OFFICER",
-  "WAREHOUSEMAN", // bodegero
-  "SITE_ENGINEER",
-  "ACCOUNTANT",
-  "AUDITOR", // read-only, incl. audit log
-  "VIEWER",
-]);
+// Roles are no longer a fixed enum — they live in the `roles` table (see below)
+// so an administrator can create custom roles and retune permissions at runtime.
+// The eight built-in roles are seeded there; `users.role` is a FK to `roles.key`.
 
 /** BIR VAT classification of a line item. */
 export const vatClassEnum = pgEnum("vat_class", ["VATABLE", "ZERO_RATED", "EXEMPT"]);
@@ -153,6 +146,23 @@ export const docSeriesEnum = pgEnum("doc_series", [
 
 /* ------------------------------- auth ------------------------------- */
 
+/**
+ * Roles are data, not a compiled enum: an administrator can create custom roles
+ * and edit which permissions each one holds. `permissions` is a JSON array of
+ * permission keys drawn from the fixed catalogue in `@/lib/rbac` — the catalogue
+ * is code-bound (each key guards a real endpoint), so roles compose those keys
+ * rather than inventing new ones. The eight built-ins are seeded with
+ * `isSystem = true`: they cannot be deleted, and ADMIN additionally keeps full
+ * access at all times (enforced in the API) so no one can lock themselves out.
+ */
+export const roles = pgTable("roles", {
+  key: varchar("key", { length: 40 }).primaryKey(),
+  label: varchar("label", { length: 80 }).notNull(),
+  isSystem: boolean("is_system").notNull().default(false),
+  permissions: jsonb("permissions").$type<string[]>().notNull().default([]),
+  ...timestamps,
+});
+
 export const users = pgTable(
   "users",
   {
@@ -160,7 +170,10 @@ export const users = pgTable(
     email: varchar("email", { length: 255 }).notNull(),
     passwordHash: text("password_hash").notNull(),
     fullName: varchar("full_name", { length: 160 }).notNull(),
-    role: roleEnum("role").notNull().default("VIEWER"),
+    role: varchar("role", { length: 40 })
+      .notNull()
+      .default("VIEWER")
+      .references(() => roles.key, { onUpdate: "cascade" }),
     isActive: boolean("is_active").notNull().default(true),
     failedLoginCount: integer("failed_login_count").notNull().default(0),
     lockedUntil: timestamp("locked_until", { withTimezone: true }),
@@ -972,7 +985,9 @@ export const saleItemsRelations = relations(saleItems, ({ one }) => ({
 
 /* ------------------------------ types ------------------------------- */
 
-export type Role = (typeof roleEnum.enumValues)[number];
+/** A role is now identified by a string key (a row in `roles`), not a fixed enum. */
+export type Role = string;
+export type RoleRow = typeof roles.$inferSelect;
 export type Uom = (typeof uomEnum.enumValues)[number];
 export type VatClass = (typeof vatClassEnum.enumValues)[number];
 export type MovementType = (typeof movementTypeEnum.enumValues)[number];

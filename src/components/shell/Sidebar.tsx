@@ -3,8 +3,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, Package, X } from "lucide-react";
-import type { Role } from "@/db/schema";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermission, type Permission } from "@/lib/rbac";
 import { cn } from "@/components/ui/cn";
 import { NAV } from "./nav";
 
@@ -13,10 +12,10 @@ function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function Sidebar({ role }: { role: Role }) {
+export function Sidebar({ permissions }: { permissions: Permission[] }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const items = NAV.filter((item) => hasPermission(role, item.permission));
+  const items = NAV.filter((item) => hasPermission(permissions, item.permission));
 
   // Close the mobile drawer on Escape.
   useEffect(() => {
