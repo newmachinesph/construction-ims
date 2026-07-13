@@ -16,6 +16,7 @@ interface SettingsFormProps {
     /** Stored 0-1 (0.1200); the form edits it as a percent. */
     vatRate: string;
     isTopWithholdingAgent: boolean;
+    allowAdminSelfApproveAdjustment: boolean;
   };
   canWrite: boolean;
 }
@@ -30,6 +31,7 @@ export function SettingsForm({ initial, canWrite }: SettingsFormProps) {
     vatRegistered: initial.vatRegistered,
     vatRatePercent: String(Number(initial.vatRate) * 100),
     isTopWithholdingAgent: initial.isTopWithholdingAgent,
+    allowAdminSelfApproveAdjustment: initial.allowAdminSelfApproveAdjustment,
   });
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -49,6 +51,7 @@ export function SettingsForm({ initial, canWrite }: SettingsFormProps) {
       vatRegistered: form.vatRegistered,
       vatRatePercent: form.vatRatePercent === "" ? 0 : Number(form.vatRatePercent),
       isTopWithholdingAgent: form.isTopWithholdingAgent,
+      allowAdminSelfApproveAdjustment: form.allowAdminSelfApproveAdjustment,
     });
     setPending(false);
     if (!result.ok) {
@@ -154,6 +157,28 @@ export function SettingsForm({ initial, canWrite }: SettingsFormProps) {
           </label>
           <p className="mt-1 pl-6 text-xs text-muted">
             When enabled, EWT is withheld on supplier purchases.
+          </p>
+        </div>
+
+        <div>
+          <label className="flex items-center gap-2 text-sm text-ink">
+            <input
+              type="checkbox"
+              checked={form.allowAdminSelfApproveAdjustment}
+              disabled={!canWrite}
+              onChange={(e) =>
+                setForm({ ...form, allowAdminSelfApproveAdjustment: e.target.checked })
+              }
+              className="accent-ink"
+            />
+            Let an administrator approve their own stock adjustments
+          </label>
+          <p className="mt-1 pl-6 text-xs text-muted">
+            For single-admin setups. When enabled, an Administrator can approve a stock
+            adjustment they created themselves — including a CSV stock import — instead of
+            needing a second approver. Leave this off if more than one person operates the
+            system: normally the person who raises an adjustment cannot also approve it, to
+            prevent one person writing off stock unwitnessed.
           </p>
         </div>
       </div>

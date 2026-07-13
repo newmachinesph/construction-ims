@@ -22,6 +22,8 @@ const patchSchema = z.object({
   /** Percent as entered in the UI (12 = 12%), stored as a 0-1 rate. */
   vatRatePercent: z.coerce.number().min(0).max(100),
   isTopWithholdingAgent: z.boolean(),
+  /** Let an ADMIN approve a stock adjustment they created themselves. */
+  allowAdminSelfApproveAdjustment: z.boolean().default(false),
 });
 
 /** Upsert the single company-settings row (id = 1). */

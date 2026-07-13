@@ -78,6 +78,13 @@
       "when": 1783818287482,
       "tag": "0010_adjustment_unit_cost",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1783918383118,
+      "tag": "0011_allow_admin_self_approve_adjustment",
+      "breakpoints": true
     }
   ]
 }

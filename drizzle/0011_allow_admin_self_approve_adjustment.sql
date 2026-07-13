@@ -1,0 +1,1 @@
+ALTER TABLE "company_settings" ADD COLUMN "allow_admin_self_approve_adjustment" boolean DEFAULT false NOT NULL;
