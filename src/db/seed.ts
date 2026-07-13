@@ -8,6 +8,7 @@ import {
   documentSeries,
   items,
   projects,
+  roles,
   stockLevels,
   suppliers,
   users,
@@ -16,6 +17,7 @@ import {
   type Uom,
   type VatClass,
 } from "./schema";
+import { ROLE_LABELS, ROLE_PERMISSIONS, SYSTEM_ROLE_KEYS } from "../lib/rbac";
 
 // Seed runs under tsx (plain Node), so it opens its own connection rather than
 // importing @/db — that module is `server-only` and would throw here.
@@ -309,6 +311,20 @@ async function seed() {
           set: { qtyOnHand: o.qty, avgUnitCost: item.cost },
         });
     }
+  }
+
+  // Roles must exist before users (users.role is a FK to roles.key).
+  // onConflictDoNothing so re-seeding never clobbers permissions an admin edited.
+  for (const key of SYSTEM_ROLE_KEYS) {
+    await db
+      .insert(roles)
+      .values({
+        key,
+        label: ROLE_LABELS[key],
+        isSystem: true,
+        permissions: [...ROLE_PERMISSIONS[key]],
+      })
+      .onConflictDoNothing();
   }
 
   // Users.

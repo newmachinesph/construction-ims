@@ -99,6 +99,13 @@ Every account uses the password **`Password123!`**.
 | `auditor@ims.ph` | Auditor | read-only + audit log |
 | `viewer@ims.ph` | Viewer | dashboards only |
 
+These eight are the **built-in** roles, seeded into the `roles` table. An
+administrator can retune any of them (except Administrator, which is locked to
+full access) and create **custom roles** under **Roles & permissions** — ticking
+any subset of the fixed permission catalogue. Permissions resolve live on every
+request, so editing a role takes effect without re-login. Permissions themselves
+are code-bound (each guards a real endpoint) and cannot be invented at runtime.
+
 ---
 
 ## Architecture
@@ -145,8 +152,9 @@ src/
   from the item master; the VAT *rate* is a company setting, never a switch at
   the till. Dropping VAT on VATable goods is under-remittance to the BIR.
 - **Two independent gates** protect every mutation: role permission
-  (`hasPermission`) and per-document separation of duties (`assertCan*`) — and
-  ADMIN is _not_ exempt from the latter.
+  (`hasPermission`, resolved from the role's live permission set) and
+  per-document separation of duties (`assertCan*`) — and ADMIN is _not_ exempt
+  from the latter (bar the opt-in single-admin adjustment self-approval).
 - **The database is the last line of defence.** CHECK constraints reject
   negative money, zero quantities, and a cash tender below the total, so a bug
   above the DB cannot write a corrupt invoice.

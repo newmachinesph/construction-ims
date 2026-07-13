@@ -6,9 +6,11 @@ import { Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select, FormError } from "@/components/ui/Field";
 import { api } from "@/components/ui/api";
-import { ROLE_LABELS } from "@/lib/rbac";
 
-const ROLE_OPTIONS = Object.entries(ROLE_LABELS);
+interface RoleOption {
+  key: string;
+  label: string;
+}
 
 const EMPTY_FORM = {
   email: "",
@@ -17,7 +19,7 @@ const EMPTY_FORM = {
   password: "",
 };
 
-export function NewUserForm() {
+export function NewUserForm({ roles }: { roles: RoleOption[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -90,9 +92,9 @@ export function NewUserForm() {
                 onChange={(e) => setForm({ ...form, role: e.target.value })}
                 required
               >
-                {ROLE_OPTIONS.map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
+                {roles.map((r) => (
+                  <option key={r.key} value={r.key}>
+                    {r.label}
                   </option>
                 ))}
               </Select>

@@ -85,6 +85,13 @@
       "when": 1783918383118,
       "tag": "0011_allow_admin_self_approve_adjustment",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1783919419183,
+      "tag": "0012_roles_table",
+      "breakpoints": true
     }
   ]
 }

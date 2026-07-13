@@ -3,7 +3,9 @@ import { created, handler, ok, parseBody } from "@/lib/api";
 import { requirePermission } from "@/lib/auth/dal";
 import { checkPasswordPolicy, hashPassword } from "@/lib/auth/password";
 import { db } from "@/db";
-import { roleEnum, users } from "@/db/schema";
+import { users } from "@/db/schema";
+import { BusinessRuleError } from "@/lib/errors";
+import { roleExists } from "@/lib/services/roles";
 import { emailSchema } from "@/lib/validation";
 
 /** Never expose the password hash. */
@@ -21,7 +23,7 @@ const safeUserColumns = {
 const createUserSchema = z.object({
   email: emailSchema,
   fullName: z.string().trim().min(1).max(160),
-  role: z.enum(roleEnum.enumValues),
+  role: z.string().trim().min(1).max(40),
   password: z.string().superRefine((plain, ctx) => {
     const result = checkPasswordPolicy(plain);
     if (!result.ok) {
@@ -42,6 +44,9 @@ export const GET = handler(async () => {
 export const POST = handler(async (req) => {
   await requirePermission("user:write");
   const body = await parseBody(req, createUserSchema);
+  if (!(await roleExists(body.role))) {
+    throw new BusinessRuleError(`Unknown role: ${body.role}`);
+  }
   const passwordHash = await hashPassword(body.password);
   const [user] = await db
     .insert(users)
