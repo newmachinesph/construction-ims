@@ -83,4 +83,14 @@ describe("separation of duties", () => {
     expect(() => assertCanApproveAdjustment(alice, { createdBy: alice })).toThrow();
     expect(() => assertCanApproveAdjustment(bob, { createdBy: alice })).not.toThrow();
   });
+
+  it("lets the creator self-approve only when explicitly allowed", () => {
+    expect(() =>
+      assertCanApproveAdjustment(alice, { createdBy: alice }, { allowSelfApprove: true }),
+    ).not.toThrow();
+    // The flag is opt-in; false or absent keeps the rule.
+    expect(() =>
+      assertCanApproveAdjustment(alice, { createdBy: alice }, { allowSelfApprove: false }),
+    ).toThrow();
+  });
 });

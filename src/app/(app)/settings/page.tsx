@@ -24,6 +24,7 @@ export default async function SettingsPage() {
             vatRegistered: s.vatRegistered,
             vatRate: s.vatRate,
             isTopWithholdingAgent: s.isTopWithholdingAgent,
+            allowAdminSelfApproveAdjustment: s.allowAdminSelfApproveAdjustment,
           }}
           canWrite={canWrite}
         />

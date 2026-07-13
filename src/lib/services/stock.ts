@@ -2,6 +2,7 @@ import "server-only";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  companySettings,
   items,
   stockAdjustmentItems,
   stockAdjustments,
@@ -243,7 +244,14 @@ export async function approveAndPostAdjustment(actor: SessionUser, adjId: string
     if (!adj) throw new NotFoundError("Stock adjustment");
     if (adj.status !== "DRAFT") throw new ConflictError(`Cannot post an adjustment in status ${adj.status}.`);
 
-    assertCanApproveAdjustment(actor.id, adj); // creator != approver
+    // Creator ≠ approver, unless a single-admin deployment has explicitly opted an
+    // ADMIN out of the check (company setting). Non-admins are never exempt.
+    const settings = await tx.query.companySettings.findFirst({
+      where: eq(companySettings.id, 1),
+    });
+    const allowSelfApprove =
+      actor.role === "ADMIN" && (settings?.allowAdminSelfApproveAdjustment ?? false);
+    assertCanApproveAdjustment(actor.id, adj, { allowSelfApprove });
 
     for (const line of adj.lines) {
       await applyMovement(tx, {
