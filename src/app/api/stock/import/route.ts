@@ -32,7 +32,7 @@ export const POST = handler(async (req) => {
   }
 
   // Committing can create items, which is a separate privilege.
-  if (!hasPermission(actor.role, "item:write")) {
+  if (!hasPermission(actor.permissions, "item:write")) {
     throw new ForbiddenError("Importing stock can create items, which needs item:write.");
   }
 

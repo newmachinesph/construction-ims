@@ -19,7 +19,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       >
         Skip to main content
       </a>
-      <Sidebar role={user.role} />
+      <Sidebar permissions={user.permissions} />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar user={user} />
         <main id="main" className="flex-1 overflow-y-auto [scrollbar-gutter:stable] bg-paper px-4 py-6 md:px-8 md:py-8">

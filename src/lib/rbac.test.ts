@@ -1,59 +1,93 @@
 import { describe, expect, it } from "vitest";
 import {
+  PERMISSIONS,
+  PERMISSION_GROUPS,
   SeparationOfDutiesError,
   assertCanApproveAdjustment,
   assertCanApproveMr,
   assertCanApprovePo,
   assertCanReceivePo,
   hasPermission,
+  isPermission,
   permissionsFor,
+  sanitizePermissions,
+  type Permission,
+  type SystemRoleKey,
 } from "./rbac";
+
+/** Does a built-in role's seeded permission set grant this? */
+const roleCan = (role: SystemRoleKey, permission: Permission) =>
+  hasPermission(permissionsFor(role), permission);
 
 describe("role permissions", () => {
   it("gives ADMIN every permission", () => {
-    expect(hasPermission("ADMIN", "user:write")).toBe(true);
-    expect(hasPermission("ADMIN", "settings:write")).toBe(true);
-    expect(hasPermission("ADMIN", "adjustment:approve")).toBe(true);
+    expect(roleCan("ADMIN", "user:write")).toBe(true);
+    expect(roleCan("ADMIN", "settings:write")).toBe(true);
+    expect(roleCan("ADMIN", "adjustment:approve")).toBe(true);
+    expect(roleCan("ADMIN", "role:write")).toBe(true);
+    // ADMIN's seed is literally the whole catalogue.
+    expect(permissionsFor("ADMIN")).toHaveLength(PERMISSIONS.length);
   });
 
   it("lets procurement create but never approve its own POs", () => {
-    expect(hasPermission("PROCUREMENT_OFFICER", "po:create")).toBe(true);
-    expect(hasPermission("PROCUREMENT_OFFICER", "po:approve")).toBe(false);
+    expect(roleCan("PROCUREMENT_OFFICER", "po:create")).toBe(true);
+    expect(roleCan("PROCUREMENT_OFFICER", "po:approve")).toBe(false);
   });
 
   it("lets the project manager approve POs but not create them", () => {
-    expect(hasPermission("PROJECT_MANAGER", "po:approve")).toBe(true);
-    expect(hasPermission("PROJECT_MANAGER", "po:create")).toBe(false);
+    expect(roleCan("PROJECT_MANAGER", "po:approve")).toBe(true);
+    expect(roleCan("PROJECT_MANAGER", "po:create")).toBe(false);
   });
 
   it("hides costs from the warehouseman", () => {
-    expect(hasPermission("WAREHOUSEMAN", "grn:post")).toBe(true);
-    expect(hasPermission("WAREHOUSEMAN", "issuance:post")).toBe(true);
-    expect(hasPermission("WAREHOUSEMAN", "report:cost")).toBe(false);
-    expect(hasPermission("WAREHOUSEMAN", "po:approve")).toBe(false);
+    expect(roleCan("WAREHOUSEMAN", "grn:post")).toBe(true);
+    expect(roleCan("WAREHOUSEMAN", "issuance:post")).toBe(true);
+    expect(roleCan("WAREHOUSEMAN", "report:cost")).toBe(false);
+    expect(roleCan("WAREHOUSEMAN", "po:approve")).toBe(false);
   });
 
   it("keeps the accountant out of physical stock movements", () => {
-    expect(hasPermission("ACCOUNTANT", "report:cost")).toBe(true);
-    expect(hasPermission("ACCOUNTANT", "audit:read")).toBe(true);
-    expect(hasPermission("ACCOUNTANT", "grn:post")).toBe(false);
-    expect(hasPermission("ACCOUNTANT", "issuance:post")).toBe(false);
+    expect(roleCan("ACCOUNTANT", "report:cost")).toBe(true);
+    expect(roleCan("ACCOUNTANT", "audit:read")).toBe(true);
+    expect(roleCan("ACCOUNTANT", "grn:post")).toBe(false);
+    expect(roleCan("ACCOUNTANT", "issuance:post")).toBe(false);
   });
 
   it("makes the auditor read-only (reads + cost visibility, no writes)", () => {
     const perms = permissionsFor("AUDITOR");
     // Auditor may see costs to audit them, but performs no mutations.
     expect(perms.every((p) => p.endsWith(":read") || p === "report:cost")).toBe(true);
-    expect(hasPermission("AUDITOR", "audit:read")).toBe(true);
-    expect(hasPermission("AUDITOR", "report:cost")).toBe(true);
-    expect(hasPermission("AUDITOR", "adjustment:create")).toBe(false);
-    expect(hasPermission("AUDITOR", "grn:post")).toBe(false);
+    expect(roleCan("AUDITOR", "audit:read")).toBe(true);
+    expect(roleCan("AUDITOR", "report:cost")).toBe(true);
+    expect(roleCan("AUDITOR", "adjustment:create")).toBe(false);
+    expect(roleCan("AUDITOR", "grn:post")).toBe(false);
   });
 
   it("limits the viewer to dashboards", () => {
-    expect(hasPermission("VIEWER", "stock:read")).toBe(true);
-    expect(hasPermission("VIEWER", "item:write")).toBe(false);
-    expect(hasPermission("VIEWER", "po:read")).toBe(false);
+    expect(roleCan("VIEWER", "stock:read")).toBe(true);
+    expect(roleCan("VIEWER", "item:write")).toBe(false);
+    expect(roleCan("VIEWER", "po:read")).toBe(false);
+  });
+});
+
+describe("permission catalogue", () => {
+  it("hasPermission works on arrays and sets", () => {
+    expect(hasPermission(["po:read", "po:create"], "po:create")).toBe(true);
+    expect(hasPermission(new Set<string>(["po:read"]), "po:create")).toBe(false);
+    expect(hasPermission(undefined, "po:read")).toBe(false);
+  });
+
+  it("only accepts real permission keys", () => {
+    expect(isPermission("adjustment:approve")).toBe(true);
+    expect(isPermission("adjustment:teleport")).toBe(false);
+    // Made-up keys are silently dropped so a role can never hold a fake grant.
+    expect(sanitizePermissions(["po:read", "nope", "po:read"])).toEqual(["po:read"]);
+  });
+
+  it("lists every permission exactly once across the UI groups", () => {
+    const grouped = PERMISSION_GROUPS.flatMap((g) => g.permissions.map((p) => p.key));
+    expect(new Set(grouped).size).toBe(grouped.length); // no duplicates
+    expect(new Set(grouped)).toEqual(new Set(PERMISSIONS)); // complete coverage
   });
 });
 
