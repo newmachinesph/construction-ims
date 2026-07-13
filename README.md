@@ -229,7 +229,9 @@ Don't set `NODE_ENV` by hand — the build and host set it. There is no
 so there is nothing to sign with.
 
 On **Vercel**, `.env.production` is not read — paste these into
-Project → Settings → Environment Variables.
+Project → Settings → Environment Variables. Deploys build from pushes to
+`main`; run `npm run db:migrate` against the production database before (or
+with) the deploy so schema and code stay in step.
 
 ---
 
