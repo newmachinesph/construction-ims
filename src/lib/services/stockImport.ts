@@ -1,11 +1,12 @@
 import "server-only";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { categories, items, uomEnum, vatClassEnum, warehouses } from "@/db/schema";
+import { categories, items, uoms, vatClassEnum, warehouses } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth/session";
 import { BusinessRuleError, NotFoundError } from "@/lib/errors";
 import { parseCsvRecords } from "@/lib/csvParse";
 import { toCsv } from "@/lib/csv";
+import { buildUomMatcher, normalizeUomKey } from "./uom";
 import { createAdjustment } from "./stock";
 import { writeAudit } from "./ledger";
 
@@ -24,8 +25,17 @@ import { writeAudit } from "./ledger";
  *     stock import is worse than a rejected one — you cannot tell what landed.
  */
 
-const UOMS = new Set<string>(uomEnum.enumValues);
 const VAT_CLASSES = new Set<string>(vatClassEnum.enumValues);
+
+/** Build a normalized code lookup for categories: accepts code OR name, any case. */
+function buildCategoryMatcher(rows: { code: string; name: string }[]): (raw: string) => string | null {
+  const map = new Map<string, string>();
+  for (const r of rows) {
+    map.set(normalizeUomKey(r.code), r.code);
+    map.set(normalizeUomKey(r.name), r.code);
+  }
+  return (raw: string) => map.get(normalizeUomKey(raw)) ?? null;
+}
 
 /** The columns of the template, in order. */
 export const IMPORT_COLUMNS = [
@@ -33,8 +43,8 @@ export const IMPORT_COLUMNS = [
   { key: "quantity", label: "quantity", required: true, note: "Qty on hand to load (> 0)" },
   { key: "cost", label: "cost", required: false, note: "Unit cost. Required for a NEW item" },
   { key: "name", label: "name", required: false, note: "Required for a NEW item" },
-  { key: "category_code", label: "category_code", required: false, note: "Required for a NEW item" },
-  { key: "uom", label: "uom", required: false, note: "Required for a NEW item" },
+  { key: "category_code", label: "category_code", required: false, note: "New item: code or name, e.g. CEM or Cement" },
+  { key: "uom", label: "uom", required: false, note: "New item: code or label, e.g. BAG or bag" },
   { key: "srp", label: "srp", required: false, note: "Retail price. New items only" },
   { key: "vat_class", label: "vat_class", required: false, note: "VATABLE | ZERO_RATED | EXEMPT" },
   { key: "reorder_point", label: "reorder_point", required: false, note: "New items only" },
@@ -104,18 +114,23 @@ export async function previewStockImport(csvText: string, warehouseId: string): 
   }
 
   const skus = rows.map((r) => r.sku).filter(Boolean);
-  const [existing, cats] = await Promise.all([
+  const [existing, cats, uomRows] = await Promise.all([
     skus.length > 0
       ? db
           .select({ id: items.id, sku: items.sku, name: items.name, standardCost: items.standardCost })
           .from(items)
           .where(inArray(items.sku, skus))
       : Promise.resolve([]),
-    db.select({ code: categories.code }).from(categories),
+    db.select({ code: categories.code, name: categories.name }).from(categories),
+    db.select({ code: uoms.code, label: uoms.label }).from(uoms),
   ]);
 
   const bySku = new Map(existing.map((i) => [i.sku, i]));
-  const catCodes = new Set(cats.map((c) => c.code));
+  // Forgiving lookups: a human-typed "bag"/"cu.m"/"cement" resolves to the code,
+  // instead of the old exact-key check where only rows that already read as the
+  // stored code passed.
+  const matchUom = buildUomMatcher(uomRows);
+  const matchCategory = buildCategoryMatcher(cats);
   const seen = new Set<string>();
 
   const results: ImportRowResult[] = rows.map((r, i) => {
@@ -146,11 +161,11 @@ export async function previewStockImport(csvText: string, warehouseId: string): 
     if (isNew) {
       if (!r.name) errors.push("name is required for a new item");
       if (!r.category_code) errors.push("category_code is required for a new item");
-      else if (!catCodes.has(r.category_code)) {
-        errors.push(`unknown category_code "${r.category_code}"`);
+      else if (!matchCategory(r.category_code)) {
+        errors.push(`unknown category "${r.category_code}"`);
       }
       if (!r.uom) errors.push("uom is required for a new item");
-      else if (!UOMS.has(r.uom)) errors.push(`unknown uom "${r.uom}"`);
+      else if (!matchUom(r.uom)) errors.push(`unknown uom "${r.uom}"`);
     }
 
     if (r.vat_class && !VAT_CLASSES.has(r.vat_class)) {
@@ -207,8 +222,18 @@ export async function commitStockImport(
   // below fails, the catalogue rows remain — harmless (an item with no stock),
   // and far better than a half-posted stock movement.
   const lines = await db.transaction(async (tx) => {
-    const catRows = await tx.select({ id: categories.id, code: categories.code }).from(categories);
-    const catByCode = new Map(catRows.map((c) => [c.code, c.id]));
+    const [catRows, uomRows] = await Promise.all([
+      tx.select({ id: categories.id, code: categories.code, name: categories.name }).from(categories),
+      tx.select({ code: uoms.code, label: uoms.label }).from(uoms),
+    ]);
+    // Same forgiving resolution as the preview — map any accepted code/name/label
+    // to the canonical id/code before inserting.
+    const catIdByKey = new Map<string, string>();
+    for (const c of catRows) {
+      catIdByKey.set(normalizeUomKey(c.code), c.id);
+      catIdByKey.set(normalizeUomKey(c.name), c.id);
+    }
+    const matchUom = buildUomMatcher(uomRows);
 
     const out: { itemId: string; qtyDelta: string; unitCost: string; remarks?: string }[] = [];
 
@@ -227,8 +252,8 @@ export async function commitStockImport(
           .values({
             sku: r.sku,
             name: r.name,
-            categoryId: catByCode.get(r.category_code)!,
-            uom: r.uom as (typeof uomEnum.enumValues)[number],
+            categoryId: catIdByKey.get(normalizeUomKey(r.category_code))!,
+            uom: matchUom(r.uom)!,
             vatClass: (r.vat_class || "VATABLE") as (typeof vatClassEnum.enumValues)[number],
             standardCost: r.cost,
             sellingPrice: r.srp || "0",

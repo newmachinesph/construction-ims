@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Field, Input, Select, FormError } from "@/components/ui/Field";
 import { api } from "@/components/ui/api";
 import { useToast } from "@/lib/store/toast";
-import { computeTotals, formatPHP, formatQty, manilaToday, UOM_LABELS } from "@/lib/ph";
+import { computeTotals, formatPHP, formatQty, manilaToday } from "@/lib/ph";
 import type { VatClass } from "@/db/schema";
 
 interface WarehouseOption {
@@ -44,10 +44,6 @@ interface CartLine {
 
 const PAYMENT_METHODS = ["CASH", "GCASH", "BANK_TRANSFER", "CHECK", "CARD"] as const;
 
-function uomLabel(uom: string): string {
-  return UOM_LABELS[uom as keyof typeof UOM_LABELS] ?? uom;
-}
-
 /**
  * Counter register. Totals are computed client-side with the same pure `ph.ts`
  * helpers the server uses, so the cashier sees exactly what will be posted —
@@ -57,15 +53,19 @@ export function PosTerminal({
   warehouses,
   customers,
   vatRate,
+  uomLabels,
 }: {
   warehouses: WarehouseOption[];
   customers: CustomerOption[];
   /** Output-VAT rate from company settings (0 when not VAT-registered). */
   vatRate: number;
+  /** uom code -> label, so custom units display their name, not their code. */
+  uomLabels: Record<string, string>;
 }) {
   const router = useRouter();
   const toast = useToast();
   const queryClient = useQueryClient();
+  const uomLabel = (code: string) => uomLabels[code] ?? code;
 
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? "");
   const [query, setQuery] = useState("");
@@ -75,6 +75,8 @@ export function PosTerminal({
   const [customerTin, setCustomerTin] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<(typeof PAYMENT_METHODS)[number]>("CASH");
   const [amountTendered, setAmountTendered] = useState("");
+  const [discountMode, setDiscountMode] = useState<"AMOUNT" | "PERCENT">("AMOUNT");
+  const [discountValue, setDiscountValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -97,6 +99,8 @@ export function PosTerminal({
       .slice(0, 8);
   }, [query, sellable]);
 
+  const hasDiscount = Number(discountValue) > 0;
+
   const totals = useMemo(
     () =>
       computeTotals(
@@ -105,9 +109,13 @@ export function PosTerminal({
           quantity: l.quantity || "0",
           vatClass: l.vatClass,
         })),
-        { withholdEwt: false, vatRate },
+        {
+          withholdEwt: false,
+          vatRate,
+          discount: hasDiscount ? { type: discountMode, value: discountValue } : undefined,
+        },
       ),
-    [lines, vatRate],
+    [lines, vatRate, hasDiscount, discountMode, discountValue],
   );
 
   const change =
@@ -190,6 +198,8 @@ export function PosTerminal({
       saleDate: manilaToday(),
       paymentMethod,
       amountTendered: paymentMethod === "CASH" && amountTendered ? amountTendered : null,
+      discountType: hasDiscount ? discountMode : null,
+      discountValue: hasDiscount ? discountValue : null,
       // No vatClass: the server reads it from the item master.
       lines: lines.map((l) => ({
         itemId: l.itemId,
@@ -409,7 +419,53 @@ export function PosTerminal({
           </>
         ) : null}
 
+        <Field label="Discount" htmlFor="pos-discount" hint="Taken off before VAT.">
+          <div className="flex items-center gap-2">
+            <div className="flex overflow-hidden rounded-md border border-line-strong">
+              {(["AMOUNT", "PERCENT"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setDiscountMode(m)}
+                  aria-pressed={discountMode === m}
+                  aria-label={m === "AMOUNT" ? "Peso discount" : "Percent discount"}
+                  className={`h-10 w-10 text-sm font-medium transition-colors ${
+                    discountMode === m ? "bg-ink text-paper" : "bg-surface text-muted hover:bg-surface-2"
+                  }`}
+                >
+                  {m === "AMOUNT" ? "₱" : "%"}
+                </button>
+              ))}
+            </div>
+            <Input
+              id="pos-discount"
+              type="number"
+              min="0"
+              step={discountMode === "PERCENT" ? "0.1" : "0.01"}
+              max={discountMode === "PERCENT" ? "100" : undefined}
+              className="flex-1"
+              value={discountValue}
+              onChange={(e) => setDiscountValue(e.target.value)}
+              placeholder={discountMode === "PERCENT" ? "0" : "0.00"}
+            />
+          </div>
+        </Field>
+
         <dl className="flex flex-col gap-1.5 border-t border-line pt-4 text-sm">
+          {Number(totals.discount) > 0 ? (
+            <>
+              <div className="flex justify-between">
+                <dt className="text-muted">Subtotal</dt>
+                <dd className="tabular text-ink-soft">{formatPHP(totals.subtotalBeforeDiscount)}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-muted">
+                  Discount{discountMode === "PERCENT" ? ` (${discountValue}%)` : ""}
+                </dt>
+                <dd className="tabular text-alert">−{formatPHP(totals.discount)}</dd>
+              </div>
+            </>
+          ) : null}
           <div className="flex justify-between">
             <dt className="text-muted">VATable sales</dt>
             <dd className="tabular text-ink-soft">{formatPHP(totals.vatableSales)}</dd>

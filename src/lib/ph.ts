@@ -79,8 +79,12 @@ export interface TaxLine {
 }
 
 export interface TaxTotals {
-  /** Sum of all line amounts, VAT-exclusive. */
+  /** Sum of all line amounts, VAT-exclusive, AFTER any discount. */
   subtotal: string;
+  /** Sum of all line amounts, VAT-exclusive, BEFORE any discount. */
+  subtotalBeforeDiscount: string;
+  /** Resolved peso discount deducted from the net base (0 when none). */
+  discount: string;
   vatableSales: string;
   zeroRatedSales: string;
   exemptSales: string;
@@ -90,6 +94,44 @@ export interface TaxTotals {
   total: string;
   /** total - EWT — cash actually remitted to the supplier. */
   netPayable: string;
+}
+
+/** How an invoice-level discount was entered: a peso amount or a percentage. */
+export type DiscountInput = { type: "AMOUNT" | "PERCENT"; value: string | number };
+
+/** Resolve a discount to centavos at the net level, clamped to [0, subtotal]. */
+function resolveDiscountCents(discount: DiscountInput | undefined, subtotalCents: number): number {
+  if (!discount) return 0;
+  const value = Number(discount.value);
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  const cents =
+    discount.type === "PERCENT"
+      ? Math.round((subtotalCents * Math.min(Math.max(value, 0), 100)) / 100)
+      : toCentavos(value);
+  return Math.max(0, Math.min(cents, subtotalCents));
+}
+
+/**
+ * Split a peso discount across the VAT-class bases in proportion to their share,
+ * so VAT lands on the discounted VATABLE base. Largest-remainder allocation keeps
+ * the parts summing to exactly the discount, and only non-zero bases take any.
+ */
+function allocateDiscount(discountCents: number, bases: readonly number[]): number[] {
+  const total = bases.reduce((a, b) => a + b, 0);
+  if (discountCents <= 0 || total <= 0) return bases.map(() => 0);
+
+  const exact = bases.map((b) => (discountCents * b) / total);
+  const alloc = exact.map(Math.floor);
+  let remainder = discountCents - alloc.reduce((a, b) => a + b, 0);
+
+  const order = bases
+    .map((base, i) => ({ i, frac: exact[i] - alloc[i], base }))
+    .filter((x) => x.base > 0)
+    .sort((a, b) => b.frac - a.frac || b.base - a.base);
+
+  for (let k = 0; k < order.length && remainder > 0; k++, remainder--) alloc[order[k].i]++;
+  if (remainder > 0 && order.length > 0) alloc[order[0].i] += remainder;
+  return alloc;
 }
 
 /** Line amount, VAT-exclusive, rounded to centavos. */
@@ -107,7 +149,9 @@ export function lineTotal(line: Pick<TaxLine, "unitPrice" | "quantity">): string
  */
 export function computeTotals(
   lines: readonly TaxLine[],
-  opts: { withholdEwt: boolean; ewtRate?: number; vatRate?: number } = { withholdEwt: false },
+  opts: { withholdEwt: boolean; ewtRate?: number; vatRate?: number; discount?: DiscountInput } = {
+    withholdEwt: false,
+  },
 ): TaxTotals {
   let vatable = 0;
   let zeroRated = 0;
@@ -124,19 +168,31 @@ export function computeTotals(
   // when the company is not VAT-registered); purchases keep the default.
   const vatRate = opts.vatRate ?? VAT_RATE;
 
-  const subtotal = vatable + zeroRated + exempt;
-  const vat = Math.round(vatable * vatRate);
+  const subtotalPre = vatable + zeroRated + exempt;
+
+  // An invoice-level discount lowers the NET base before VAT (BIR-correct), split
+  // across the VAT classes so output VAT drops with the VATABLE portion.
+  const discount = resolveDiscountCents(opts.discount, subtotalPre);
+  const [dV, dZ, dE] = allocateDiscount(discount, [vatable, zeroRated, exempt]);
+  const vatablePost = vatable - dV;
+  const zeroPost = zeroRated - dZ;
+  const exemptPost = exempt - dE;
+
+  const subtotal = subtotalPre - discount;
+  const vat = Math.round(vatablePost * vatRate);
   const total = subtotal + vat;
 
-  // EWT base is the VAT-exclusive amount across ALL classes.
+  // EWT base is the VAT-exclusive amount across ALL classes, net of discount.
   const ewtRate = opts.ewtRate ?? EWT_RATE_GOODS;
   const ewt = opts.withholdEwt ? Math.round(subtotal * ewtRate) : 0;
 
   return {
     subtotal: fromCentavos(subtotal),
-    vatableSales: fromCentavos(vatable),
-    zeroRatedSales: fromCentavos(zeroRated),
-    exemptSales: fromCentavos(exempt),
+    subtotalBeforeDiscount: fromCentavos(subtotalPre),
+    discount: fromCentavos(discount),
+    vatableSales: fromCentavos(vatablePost),
+    zeroRatedSales: fromCentavos(zeroPost),
+    exemptSales: fromCentavos(exemptPost),
     vatAmount: fromCentavos(vat),
     ewtAmount: fromCentavos(ewt),
     total: fromCentavos(total),

@@ -7,17 +7,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select, FormError } from "@/components/ui/Field";
+import { EditableSelect } from "@/components/ui/EditableSelect";
 import { api } from "@/components/ui/api";
 import { useToast } from "@/lib/store/toast";
-import { UOM_LABELS } from "@/lib/ph";
-
-interface CategoryOption {
-  id: string;
-  name: string;
-}
+import { createCategoryOption, createUomOption, type CategoryOption, type UomOption } from "./catalog";
 
 const VAT_CLASSES = ["VATABLE", "ZERO_RATED", "EXEMPT"] as const;
-const UOM_KEYS = Object.keys(UOM_LABELS) as (keyof typeof UOM_LABELS)[];
 
 interface CreateForm {
   sku: string;
@@ -32,12 +27,12 @@ interface CreateForm {
   isWeatherSensitive: boolean;
 }
 
-function emptyForm(categories: CategoryOption[]): CreateForm {
+function emptyForm(categories: CategoryOption[], uoms: UomOption[]): CreateForm {
   return {
     sku: "",
     name: "",
     categoryId: categories[0]?.id ?? "",
-    uom: "PC",
+    uom: uoms.find((u) => u.code === "PC")?.code ?? uoms[0]?.code ?? "",
     vatClass: "VATABLE",
     standardCost: "0",
     sellingPrice: "0",
@@ -47,19 +42,30 @@ function emptyForm(categories: CategoryOption[]): CreateForm {
   };
 }
 
-export function ItemForm({ categories }: { categories: CategoryOption[] }) {
+export function ItemForm({
+  categories,
+  uoms,
+}: {
+  categories: CategoryOption[];
+  uoms: UomOption[];
+}) {
   const router = useRouter();
   const toast = useToast();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Local copies so a category/unit added inline shows up immediately.
+  const [cats, setCats] = useState(categories);
+  const [units, setUnits] = useState(uoms);
 
   const {
     register,
     handleSubmit,
     reset,
+    setValue,
+    watch,
     formState: { isSubmitting },
-  } = useForm<CreateForm>({ defaultValues: emptyForm(categories) });
+  } = useForm<CreateForm>({ defaultValues: emptyForm(categories, uoms) });
 
   const onSubmit = handleSubmit(async (values) => {
     setError(null);
@@ -75,7 +81,7 @@ export function ItemForm({ categories }: { categories: CategoryOption[] }) {
     }
     toast.success("Item created");
     queryClient.invalidateQueries({ queryKey: ["items"] });
-    reset(emptyForm(categories));
+    reset(emptyForm(cats, units));
     setOpen(false);
     // Go straight to the new item's page so photos can be added and any field
     // corrected right after creation.
@@ -109,23 +115,37 @@ export function ItemForm({ categories }: { categories: CategoryOption[] }) {
             <Field label="Name" htmlFor="name" required className="lg:col-span-2">
               <Input id="name" required {...register("name")} />
             </Field>
-            <Field label="Category" htmlFor="categoryId" required>
-              <Select id="categoryId" required {...register("categoryId")}>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
+            <Field label="Category" htmlFor="categoryId" hint="＋ to add a new one" required>
+              <EditableSelect
+                id="categoryId"
+                required
+                value={watch("categoryId")}
+                onChange={(v) => setValue("categoryId", v)}
+                options={cats.map((c) => ({ value: c.id, label: c.name }))}
+                newLabel="New category"
+                placeholder="e.g. Power Tools"
+                onCreate={async (name) => {
+                  const opt = await createCategoryOption(name);
+                  setCats((prev) => [...prev, { id: opt.value, name: opt.label }]);
+                  return opt;
+                }}
+              />
             </Field>
-            <Field label="Unit of measure" htmlFor="uom" required>
-              <Select id="uom" required {...register("uom")}>
-                {UOM_KEYS.map((key) => (
-                  <option key={key} value={key}>
-                    {UOM_LABELS[key]}
-                  </option>
-                ))}
-              </Select>
+            <Field label="Unit of measure" htmlFor="uom" hint="＋ to add a new one" required>
+              <EditableSelect
+                id="uom"
+                required
+                value={watch("uom")}
+                onChange={(v) => setValue("uom", v)}
+                options={units.map((u) => ({ value: u.code, label: u.label }))}
+                newLabel="New unit"
+                placeholder="e.g. drum"
+                onCreate={async (name) => {
+                  const opt = await createUomOption(name);
+                  setUnits((prev) => [...prev, { code: opt.value, label: opt.label }]);
+                  return opt;
+                }}
+              />
             </Field>
             <Field label="VAT class" htmlFor="vatClass" required>
               <Select id="vatClass" required {...register("vatClass")}>

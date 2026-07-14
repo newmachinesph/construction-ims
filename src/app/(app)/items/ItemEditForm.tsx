@@ -6,14 +6,10 @@ import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select, FormError } from "@/components/ui/Field";
+import { EditableSelect } from "@/components/ui/EditableSelect";
 import { api } from "@/components/ui/api";
 import { useToast } from "@/lib/store/toast";
-import { UOM_LABELS } from "@/lib/ph";
-
-interface CategoryOption {
-  id: string;
-  name: string;
-}
+import { createCategoryOption, createUomOption, type CategoryOption, type UomOption } from "./catalog";
 
 export interface EditableItem {
   id: string;
@@ -46,7 +42,6 @@ interface EditForm {
 }
 
 const VAT_CLASSES = ["VATABLE", "ZERO_RATED", "EXEMPT"] as const;
-const UOM_KEYS = Object.keys(UOM_LABELS) as (keyof typeof UOM_LABELS)[];
 
 /**
  * Edit an existing item (PATCH /api/items/[id]). Rendered on the item detail
@@ -57,19 +52,25 @@ const UOM_KEYS = Object.keys(UOM_LABELS) as (keyof typeof UOM_LABELS)[];
 export function ItemEditForm({
   item,
   categories,
+  uoms,
 }: {
   item: EditableItem;
   categories: CategoryOption[];
+  uoms: UomOption[];
 }) {
   const router = useRouter();
   const toast = useToast();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cats, setCats] = useState(categories);
+  const [units, setUnits] = useState(uoms);
 
   const {
     register,
     handleSubmit,
+    setValue,
+    watch,
     formState: { isSubmitting },
   } = useForm<EditForm>({
     defaultValues: {
@@ -133,22 +134,36 @@ export function ItemEditForm({
             <Input id="e-name" required {...register("name")} />
           </Field>
           <Field label="Category" htmlFor="e-categoryId" required>
-            <Select id="e-categoryId" required {...register("categoryId")}>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
+            <EditableSelect
+              id="e-categoryId"
+              required
+              value={watch("categoryId")}
+              onChange={(v) => setValue("categoryId", v)}
+              options={cats.map((c) => ({ value: c.id, label: c.name }))}
+              newLabel="New category"
+              placeholder="e.g. Power Tools"
+              onCreate={async (name) => {
+                const opt = await createCategoryOption(name);
+                setCats((prev) => [...prev, { id: opt.value, name: opt.label }]);
+                return opt;
+              }}
+            />
           </Field>
           <Field label="Unit of measure" htmlFor="e-uom" required>
-            <Select id="e-uom" required {...register("uom")}>
-              {UOM_KEYS.map((key) => (
-                <option key={key} value={key}>
-                  {UOM_LABELS[key]}
-                </option>
-              ))}
-            </Select>
+            <EditableSelect
+              id="e-uom"
+              required
+              value={watch("uom")}
+              onChange={(v) => setValue("uom", v)}
+              options={units.map((u) => ({ value: u.code, label: u.label }))}
+              newLabel="New unit"
+              placeholder="e.g. drum"
+              onCreate={async (name) => {
+                const opt = await createUomOption(name);
+                setUnits((prev) => [...prev, { code: opt.value, label: opt.label }]);
+                return opt;
+              }}
+            />
           </Field>
           <Field label="VAT class" htmlFor="e-vatClass" required>
             <Select id="e-vatClass" required {...register("vatClass")}>

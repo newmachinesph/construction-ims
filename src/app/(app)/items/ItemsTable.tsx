@@ -9,7 +9,7 @@ import { Table, TableWrap, THead, TBody, Th, Tr, Td, EmptyRow } from "@/componen
 import { SortableTh, nextSort, type SortDir } from "@/components/ui/SortableTh";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
-import { formatPHP, formatQty, UOM_LABELS } from "@/lib/ph";
+import { formatPHP, formatQty } from "@/lib/ph";
 
 const PAGE_SIZE = 25;
 
@@ -35,10 +35,6 @@ interface ItemsPage {
   pageSize: number;
 }
 
-function uomLabel(uom: string): string {
-  return UOM_LABELS[uom as keyof typeof UOM_LABELS] ?? uom;
-}
-
 async function fetchItems(
   page: number,
   q: string,
@@ -58,7 +54,15 @@ async function fetchItems(
   return json.data as ItemsPage;
 }
 
-export function ItemsTable({ categories }: { categories: { id: string; name: string }[] }) {
+export function ItemsTable({
+  categories,
+  uoms,
+}: {
+  categories: { id: string; name: string }[];
+  uoms: { code: string; label: string }[];
+}) {
+  const uomLabels = new Map(uoms.map((u) => [u.code, u.label]));
+  const uomLabel = (code: string) => uomLabels.get(code) ?? code;
   const [search, setSearch] = useState("");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);

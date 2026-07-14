@@ -1,21 +1,21 @@
-import { asc } from "drizzle-orm";
-import { db } from "@/db";
-import { categories } from "@/db/schema";
 import { requirePermissionPage, can } from "@/lib/auth/dal";
+import { listCategories } from "@/lib/services/categories";
+import { listUoms } from "@/lib/services/uom";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ItemForm } from "./ItemForm";
+import { ItemsImport } from "./ItemsImport";
+import { CatalogManager } from "./CatalogManager";
 import { ItemsTable } from "./ItemsTable";
 
 export default async function ItemsPage() {
   await requirePermissionPage("item:read");
-  const canWrite = await can("item:write");
+  const [canWrite, canManageLists] = await Promise.all([can("item:write"), can("category:write")]);
 
-  // Categories feed the create form and the table's filter; the table fetches
-  // its own rows client-side (TanStack Query) with server pagination + search.
-  const categoryRows = await db
-    .select({ id: categories.id, name: categories.name })
-    .from(categories)
-    .orderBy(asc(categories.name));
+  // Categories + units feed the create form, the CSV importer and the table's
+  // filter/labels. Units are now data (the uoms table), not a fixed enum.
+  const [categoryRows, uomRows] = await Promise.all([listCategories(), listUoms()]);
+  const categories = categoryRows.map((c) => ({ id: c.id, name: c.name }));
+  const uoms = uomRows.map((u) => ({ code: u.code, label: u.label }));
 
   return (
     <>
@@ -23,8 +23,10 @@ export default async function ItemsPage() {
         title="Items"
         description="Material catalog — SKUs, units of measure, and reorder levels."
       />
-      {canWrite ? <ItemForm categories={categoryRows} /> : null}
-      <ItemsTable categories={categoryRows} />
+      {canWrite ? <ItemForm categories={categories} uoms={uoms} /> : null}
+      {canWrite ? <ItemsImport /> : null}
+      {canManageLists ? <CatalogManager categories={categoryRows} uoms={uomRows} /> : null}
+      <ItemsTable categories={categories} uoms={uoms} />
     </>
   );
 }

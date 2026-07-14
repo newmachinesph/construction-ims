@@ -30,6 +30,10 @@ const createSaleSchema = z.object({
   paymentMethod: z.enum(["CASH", "GCASH", "BANK_TRANSFER", "CHECK", "CARD"]),
   amountTendered: moneySchema.nullish(),
   notes: z.string().trim().max(500).optional(),
+  // Invoice discount. The peso figure is recomputed server-side from these, so a
+  // tampered client total cannot under-ring VAT.
+  discountType: z.enum(["AMOUNT", "PERCENT"]).nullish(),
+  discountValue: moneySchema.nullish(),
   lines: z.array(saleLineSchema).min(1, "A sale needs at least one line."),
 }).refine((v) => v.paymentMethod !== "CASH" || v.amountTendered != null, {
   message: "A cash sale must record the amount tendered.",

@@ -46,6 +46,9 @@ export interface CreateSaleInput {
   paymentMethod: PaymentMethod;
   amountTendered?: string | null;
   notes?: string;
+  /** Invoice-level discount: a peso amount or a percentage of the net. */
+  discountType?: "AMOUNT" | "PERCENT" | null;
+  discountValue?: string | null;
   lines: SaleLineInput[];
 }
 
@@ -95,6 +98,11 @@ export async function createAndPostSale(actor: SessionUser, input: CreateSaleInp
     if (!item.isActive) throw new BusinessRuleError(`${item.sku} is inactive and cannot be sold.`);
   }
 
+  const discount =
+    input.discountType && input.discountValue != null
+      ? { type: input.discountType, value: input.discountValue }
+      : undefined;
+
   const totals = computeTotals(
     input.lines.map((l) => ({
       unitPrice: l.unitPrice,
@@ -104,6 +112,7 @@ export async function createAndPostSale(actor: SessionUser, input: CreateSaleInp
     {
       withholdEwt: false, // We are the seller: output VAT only, no EWT on our own sale.
       vatRate: await outputVatRate(), // company setting, never a per-sale choice
+      discount, // resolved server-side; the client's figure is never trusted
     },
   );
 
@@ -138,6 +147,9 @@ export async function createAndPostSale(actor: SessionUser, input: CreateSaleInp
         vatableSales: totals.vatableSales,
         zeroRatedSales: totals.zeroRatedSales,
         exemptSales: totals.exemptSales,
+        discountType: discount ? input.discountType : null,
+        discountValue: discount ? input.discountValue : null,
+        discountAmount: totals.discount,
         vatAmount: totals.vatAmount,
         total: totals.total,
         paymentMethod: input.paymentMethod,
@@ -202,6 +214,9 @@ export async function createAndPostSale(actor: SessionUser, input: CreateSaleInp
         siNumber,
         total: totals.total,
         paymentMethod: input.paymentMethod,
+        ...(Number(totals.discount) > 0
+          ? { discount: totals.discount, discountType: input.discountType }
+          : {}),
         ...(discounted.length > 0 ? { belowCatalogPrice: discounted } : {}),
       },
     });

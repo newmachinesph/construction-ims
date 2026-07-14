@@ -6,6 +6,7 @@ import { BusinessRuleError, ForbiddenError, NotFoundError } from "@/lib/errors";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { roleExists } from "@/lib/services/roles";
+import { deleteUser } from "@/lib/services/users";
 import { emailSchema, uuidSchema } from "@/lib/validation";
 import { writeAudit } from "@/lib/services/ledger";
 
@@ -79,4 +80,11 @@ export const PATCH = handler(async (req, ctx) => {
   });
 
   return ok(updated);
+});
+
+export const DELETE = handler(async (_req, ctx) => {
+  const actor = await requirePermission("user:write");
+  const { id } = await ctx.params;
+  await deleteUser(actor, uuidSchema.parse(id));
+  return ok({ deleted: true });
 });

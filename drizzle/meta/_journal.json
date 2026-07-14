@@ -92,6 +92,13 @@
       "when": 1783919419183,
       "tag": "0012_roles_table",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1784047340662,
+      "tag": "0013_clever_thing",
+      "breakpoints": true
     }
   ]
 }
