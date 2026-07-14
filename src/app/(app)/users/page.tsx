@@ -8,7 +8,7 @@ import { NewUserForm } from "./NewUserForm";
 import { UsersTable } from "./UsersTable";
 
 export default async function UsersPage() {
-  await requirePermissionPage("user:read");
+  const actor = await requirePermissionPage("user:read");
   const canWrite = await can("user:write");
 
   const [rows, roles] = await Promise.all([
@@ -30,7 +30,7 @@ export default async function UsersPage() {
     <>
       <PageHeader title="Users" description="Accounts, roles, and access for this workspace." />
       {canWrite ? <NewUserForm roles={roles} /> : null}
-      <UsersTable rows={rows} roles={roles} canWrite={canWrite} />
+      <UsersTable rows={rows} roles={roles} canWrite={canWrite} currentUserId={actor.id} />
     </>
   );
 }

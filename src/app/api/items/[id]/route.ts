@@ -2,9 +2,11 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { handler, ok, parseBody } from "@/lib/api";
 import { requirePermission } from "@/lib/auth/dal";
-import { NotFoundError } from "@/lib/errors";
+import { BusinessRuleError, NotFoundError } from "@/lib/errors";
 import { db } from "@/db";
-import { items, uomEnum } from "@/db/schema";
+import { items } from "@/db/schema";
+import { uomExists } from "@/lib/services/uom";
+import { deleteItem } from "@/lib/services/items";
 import { moneySchema, uuidSchema, vatClassSchema } from "@/lib/validation";
 
 const nonNegQty = z
@@ -24,7 +26,7 @@ const weightSchema = z
 const updateItemSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
   categoryId: uuidSchema.optional(),
-  uom: z.enum(uomEnum.enumValues).optional(),
+  uom: z.string().trim().min(1).max(24).optional(),
   standardCost: moneySchema.optional(),
   sellingPrice: moneySchema.optional(),
   reorderPoint: nonNegQty.optional(),
@@ -40,6 +42,9 @@ export const PATCH = handler(async (req, ctx) => {
   await requirePermission("item:write");
   const { id } = await ctx.params;
   const body = await parseBody(req, updateItemSchema);
+  if (body.uom && !(await uomExists(body.uom))) {
+    throw new BusinessRuleError(`Unknown unit of measure: ${body.uom}`);
+  }
   const [updated] = await db
     .update(items)
     .set({ ...body, updatedAt: new Date() })
@@ -47,4 +52,11 @@ export const PATCH = handler(async (req, ctx) => {
     .returning();
   if (!updated) throw new NotFoundError("Item");
   return ok(updated);
+});
+
+export const DELETE = handler(async (_req, ctx) => {
+  const actor = await requirePermission("item:write");
+  const { id } = await ctx.params;
+  await deleteItem(actor, uuidSchema.parse(id));
+  return ok({ deleted: true });
 });

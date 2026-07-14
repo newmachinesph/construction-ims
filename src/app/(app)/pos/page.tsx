@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { customers, warehouses } from "@/db/schema";
 import { requirePermissionPage } from "@/lib/auth/dal";
 import { outputVatRate } from "@/lib/services/sales";
+import { uomLabelMap } from "@/lib/services/uom";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PosTerminal } from "./PosTerminal";
 
@@ -13,7 +14,7 @@ export default async function PosPage() {
   // so the cashier never sees a total that differs from what gets posted.
   const vatRate = await outputVatRate();
 
-  const [warehouseRows, customerRows] = await Promise.all([
+  const [warehouseRows, customerRows, uomLabels] = await Promise.all([
     db
       .select({ id: warehouses.id, name: warehouses.name })
       .from(warehouses)
@@ -24,6 +25,7 @@ export default async function PosPage() {
       .from(customers)
       .where(eq(customers.isActive, true))
       .orderBy(asc(customers.name)),
+    uomLabelMap(),
   ]);
 
   return (
@@ -35,7 +37,12 @@ export default async function PosPage() {
       {warehouseRows.length === 0 ? (
         <p className="text-sm text-muted">Create a warehouse first — there is nothing to sell from.</p>
       ) : (
-        <PosTerminal warehouses={warehouseRows} customers={customerRows} vatRate={vatRate} />
+        <PosTerminal
+          warehouses={warehouseRows}
+          customers={customerRows}
+          vatRate={vatRate}
+          uomLabels={uomLabels}
+        />
       )}
     </>
   );

@@ -5,7 +5,8 @@ import { items, materialRequisitions, purchaseOrders } from "@/db/schema";
 import { requirePermissionPage, can } from "@/lib/auth/dal";
 import { lowStockItems, recentMovements, listStock } from "@/lib/services/stock";
 import { salesReport, type Granularity } from "@/lib/services/salesReport";
-import { formatManila, formatPHP, formatQty, manilaToday, UOM_LABELS } from "@/lib/ph";
+import { uomLabelMap } from "@/lib/services/uom";
+import { formatManila, formatPHP, formatQty, manilaToday } from "@/lib/ph";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatTile } from "@/components/ui/StatTile";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -13,10 +14,6 @@ import { Table, TableWrap, THead, TBody, Th, Tr, Td, EmptyRow } from "@/componen
 import { BarChart } from "@/components/charts/BarChart";
 import { RankedBars } from "@/components/charts/RankedBars";
 import { SalesRangeForm } from "./SalesRangeForm";
-
-function uomLabel(uom: string): string {
-  return UOM_LABELS[uom as keyof typeof UOM_LABELS] ?? uom;
-}
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -55,17 +52,20 @@ export default async function DashboardPage({
   const { from, to, granularity } = parseRange(sp);
   const report = canSeeSales ? await salesReport(from, to, granularity) : null;
 
-  const [stock, lowStock, movements, activeSkuRows, openPoRows, pendingMrRows] = await Promise.all([
-    listStock(),
-    lowStockItems(),
-    recentMovements(12),
-    db.select({ n: count() }).from(items).where(eq(items.isActive, true)),
-    db
-      .select({ n: count() })
-      .from(purchaseOrders)
-      .where(inArray(purchaseOrders.status, ["APPROVED", "PARTIALLY_RECEIVED"])),
-    db.select({ n: count() }).from(materialRequisitions).where(eq(materialRequisitions.status, "SUBMITTED")),
-  ]);
+  const [stock, lowStock, movements, activeSkuRows, openPoRows, pendingMrRows, uomLabels] =
+    await Promise.all([
+      listStock(),
+      lowStockItems(),
+      recentMovements(12),
+      db.select({ n: count() }).from(items).where(eq(items.isActive, true)),
+      db
+        .select({ n: count() })
+        .from(purchaseOrders)
+        .where(inArray(purchaseOrders.status, ["APPROVED", "PARTIALLY_RECEIVED"])),
+      db.select({ n: count() }).from(materialRequisitions).where(eq(materialRequisitions.status, "SUBMITTED")),
+      uomLabelMap(),
+    ]);
+  const uomLabel = (code: string) => uomLabels[code] ?? code;
 
   const inventoryValue = stock.reduce(
     (sum, row) => sum + Number(row.qtyOnHand) * Number(row.avgUnitCost),
@@ -79,34 +79,10 @@ export default async function DashboardPage({
     <>
       <PageHeader title="Dashboard" description="Live picture of stock, procurement and site demand." />
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatTile label="Active SKUs" value={activeSkus} icon={<Boxes className="size-5" />} />
-        {canCost ? (
-          <StatTile label="Inventory value" value={formatPHP(inventoryValue)} hint="On-hand × avg cost" />
-        ) : null}
-        <StatTile
-          label="Low-stock items"
-          value={lowStock.length}
-          alert={lowStock.length > 0}
-          icon={<FileWarning className="size-5" />}
-        />
-        <StatTile
-          label="Open purchase orders"
-          value={openPos}
-          hint="Approved / partially received"
-          icon={<ShoppingCart className="size-5" />}
-        />
-        <StatTile
-          label="Pending requisitions"
-          value={pendingMrs}
-          hint="Awaiting approval"
-          icon={<PackageCheck className="size-5" />}
-        />
-      </div>
-
-      {/* Sales report — date-ranged, daily or monthly */}
+      {/* Sales report — date-ranged, daily or monthly. Shown first: the counter's
+          day-to-day money picture leads; the inventory snapshot follows below. */}
       {report ? (
-        <section className="flex flex-col gap-4 border-t border-line pt-6">
+        <section className="flex flex-col gap-4">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
@@ -168,6 +144,32 @@ export default async function DashboardPage({
           </div>
         </section>
       ) : null}
+
+      {/* Inventory snapshot — the KPI tiles sit under the sales report now. */}
+      <div className="grid grid-cols-2 gap-4 border-t border-line pt-6 lg:grid-cols-4">
+        <StatTile label="Active SKUs" value={activeSkus} icon={<Boxes className="size-5" />} />
+        {canCost ? (
+          <StatTile label="Inventory value" value={formatPHP(inventoryValue)} hint="On-hand × avg cost" />
+        ) : null}
+        <StatTile
+          label="Low-stock items"
+          value={lowStock.length}
+          alert={lowStock.length > 0}
+          icon={<FileWarning className="size-5" />}
+        />
+        <StatTile
+          label="Open purchase orders"
+          value={openPos}
+          hint="Approved / partially received"
+          icon={<ShoppingCart className="size-5" />}
+        />
+        <StatTile
+          label="Pending requisitions"
+          value={pendingMrs}
+          hint="Awaiting approval"
+          icon={<PackageCheck className="size-5" />}
+        />
+      </div>
 
       {/* Low stock — reorder */}
       <section className="flex flex-col gap-3">

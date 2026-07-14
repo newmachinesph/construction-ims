@@ -56,25 +56,10 @@ export const projectStatusEnum = pgEnum("project_status", [
 
 export const warehouseKindEnum = pgEnum("warehouse_kind", ["MAIN_WAREHOUSE", "SITE_BODEGA"]);
 
-export const uomEnum = pgEnum("uom", [
-  "BAG", // cement, 40kg
-  "PC", // pieces (CHB, fittings)
-  "LENGTH", // rebar / pipe, standard 6.0 m commercial length
-  "KG",
-  "TON",
-  "CU_M", // cubic metre — sand, gravel, ready-mix concrete
-  "SQ_M",
-  "M",
-  "LM", // linear metre
-  "BD_FT", // board foot — lumber
-  "SHEET", // 4' x 8' plywood / phenolic / G.I.
-  "ROLL",
-  "L",
-  "GAL",
-  "PAIL",
-  "SET",
-  "LOT",
-]);
+// Units of measure are no longer a fixed enum — they live in the `uoms` table
+// (see below) so an administrator can add trade-specific units (drum, box, …) at
+// runtime. `items.uom` is a FK to `uoms.code`. The built-in construction units are
+// seeded with `isSystem = true` and can never be deleted.
 
 export const poStatusEnum = pgEnum("po_status", [
   "DRAFT",
@@ -211,6 +196,20 @@ export const categories = pgTable("categories", {
   ...timestamps,
 });
 
+/**
+ * Units of measure as data, not a compiled enum, so an administrator can add
+ * trade-specific units at runtime. `code` is the natural key stored on items
+ * (BAG, PC, CU_M…); `label` is what the UI shows (bag, pc, cu.m). The built-in
+ * construction units are seeded with `isSystem = true` and cannot be deleted.
+ */
+export const uoms = pgTable("uoms", {
+  code: varchar("code", { length: 24 }).primaryKey(),
+  label: varchar("label", { length: 40 }).notNull(),
+  isSystem: boolean("is_system").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  ...timestamps,
+});
+
 export const projects = pgTable("projects", {
   id: uuid("id").primaryKey().defaultRandom(),
   code: varchar("code", { length: 32 }).notNull().unique(),
@@ -274,7 +273,9 @@ export const items = pgTable(
     categoryId: uuid("category_id")
       .notNull()
       .references(() => categories.id, { onDelete: "restrict" }),
-    uom: uomEnum("uom").notNull(),
+    uom: varchar("uom", { length: 24 })
+      .notNull()
+      .references(() => uoms.code, { onUpdate: "cascade" }),
     /**
      * Mass of one stocking UoM, when the trade also prices by weight.
      * 12mm x 6m deformed bar = 5.328 kg -> lets us reconcile a supplier
@@ -750,12 +751,21 @@ export const sales = pgTable(
       .references(() => warehouses.id, { onDelete: "restrict" }),
     status: docStatusEnum("status").notNull().default("POSTED"),
     saleDate: date("sale_date").notNull(),
-    /** Net of VAT. */
+    /** Net of VAT, AFTER any invoice discount (= vatable+zeroRated+exempt below).
+     *  This is the figure the sales report books as net sales. */
     subtotal: money("subtotal").notNull().default("0"),
+    /** Taxable bases AFTER the discount is allocated across them. */
     vatableSales: money("vatable_sales").notNull().default("0"),
     zeroRatedSales: money("zero_rated_sales").notNull().default("0"),
     exemptSales: money("exempt_sales").notNull().default("0"),
-    /** 12% output VAT on vatable lines. */
+    /** Invoice-level discount, applied to the NET base before VAT (BIR-correct:
+     *  the discount lowers the taxable base, so output VAT drops with it).
+     *  type/value record how it was entered (AMOUNT ₱ or PERCENT %); amount is the
+     *  resolved peso figure deducted from the pre-discount net. */
+    discountType: varchar("discount_type", { length: 12 }),
+    discountValue: numeric("discount_value", { precision: 14, scale: 4 }),
+    discountAmount: money("discount_amount").notNull().default("0"),
+    /** 12% output VAT on the discounted vatable base. */
     vatAmount: money("vat_amount").notNull().default("0"),
     /** subtotal + VAT — what the customer pays. */
     total: money("total").notNull().default("0"),
@@ -988,7 +998,9 @@ export const saleItemsRelations = relations(saleItems, ({ one }) => ({
 /** A role is now identified by a string key (a row in `roles`), not a fixed enum. */
 export type Role = string;
 export type RoleRow = typeof roles.$inferSelect;
-export type Uom = (typeof uomEnum.enumValues)[number];
+/** A UoM is now a `uoms.code` string, not a compiled enum member. */
+export type Uom = string;
+export type UomRow = typeof uoms.$inferSelect;
 export type VatClass = (typeof vatClassEnum.enumValues)[number];
 export type MovementType = (typeof movementTypeEnum.enumValues)[number];
 export type DocSeries = (typeof docSeriesEnum.enumValues)[number];

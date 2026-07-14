@@ -3,15 +3,12 @@ import { db } from "@/db";
 import { companySettings } from "@/db/schema";
 import { requirePermissionPage, can } from "@/lib/auth/dal";
 import { getSale } from "@/lib/services/sales";
-import { formatManila, formatPHP, formatQty, UOM_LABELS } from "@/lib/ph";
+import { uomLabelMap } from "@/lib/services/uom";
+import { formatManila, formatPHP, formatQty } from "@/lib/ph";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PrintButton } from "@/app/(app)/reports/PrintButton";
 import { VoidSaleButton } from "./VoidSaleButton";
 import { Table, TableWrap, THead, TBody, Th, Tr, Td } from "@/components/ui/Table";
-
-function uomLabel(uom: string): string {
-  return UOM_LABELS[uom as keyof typeof UOM_LABELS] ?? uom;
-}
 
 /** The browser names a "Save as PDF" download after the document title, so this
  *  makes the invoice download as `SI-000123.pdf` rather than the page title. */
@@ -25,12 +22,14 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
   await requirePermissionPage("sale:read");
   const { id } = await params;
 
-  const [sale, settings, canCost, canVoid] = await Promise.all([
+  const [sale, settings, canCost, canVoid, uomLabels] = await Promise.all([
     getSale(id),
     db.query.companySettings.findFirst({ where: eq(companySettings.id, 1) }),
     can("report:cost"),
     can("sale:void"),
+    uomLabelMap(),
   ]);
+  const uomLabel = (code: string) => uomLabels[code] ?? code;
 
   // Back out the rate this invoice was actually charged at, so an old invoice keeps
   // showing its own rate even after the company setting changes.
@@ -131,6 +130,25 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
 
         <div className="mt-6 flex justify-end">
           <dl className="flex w-full max-w-xs flex-col gap-1.5 text-sm">
+            {Number(sale.discountAmount) > 0 ? (
+              <>
+                <div className="flex justify-between">
+                  <dt className="text-muted">Subtotal</dt>
+                  <dd className="tabular text-ink-soft">
+                    {formatPHP(Number(sale.subtotal) + Number(sale.discountAmount))}
+                  </dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-muted">
+                    Discount
+                    {sale.discountType === "PERCENT" && sale.discountValue
+                      ? ` (${Number(sale.discountValue)}%)`
+                      : ""}
+                  </dt>
+                  <dd className="tabular text-alert">−{formatPHP(sale.discountAmount)}</dd>
+                </div>
+              </>
+            ) : null}
             <div className="flex justify-between">
               <dt className="text-muted">VATable sales</dt>
               <dd className="tabular text-ink-soft">{formatPHP(sale.vatableSales)}</dd>

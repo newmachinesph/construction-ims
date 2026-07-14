@@ -87,6 +87,59 @@ describe("VAT / EWT totals", () => {
   });
 });
 
+describe("invoice discount (applied before VAT)", () => {
+  it("drops VAT with a peso discount", () => {
+    const t = computeTotals([{ unitPrice: "1000", quantity: "1", vatClass: "VATABLE" }], {
+      withholdEwt: false,
+      discount: { type: "AMOUNT", value: "100" },
+    });
+    expect(t.subtotalBeforeDiscount).toBe("1000.00");
+    expect(t.discount).toBe("100.00");
+    expect(t.subtotal).toBe("900.00"); // net, after discount
+    expect(t.vatableSales).toBe("900.00");
+    expect(t.vatAmount).toBe("108.00"); // 12% of the discounted 900, not 1000
+    expect(t.total).toBe("1008.00");
+  });
+
+  it("treats a percentage the same as the equivalent peso amount", () => {
+    const t = computeTotals([{ unitPrice: "1000", quantity: "1", vatClass: "VATABLE" }], {
+      withholdEwt: false,
+      discount: { type: "PERCENT", value: "10" },
+    });
+    expect(t.discount).toBe("100.00");
+    expect(t.vatAmount).toBe("108.00");
+    expect(t.total).toBe("1008.00");
+  });
+
+  it("splits the discount across VAT classes so VAT lands on the discounted base", () => {
+    // 1000 VATABLE + 1000 EXEMPT, 200 off -> 100 off each half.
+    const t = computeTotals(
+      [
+        { unitPrice: "1000", quantity: "1", vatClass: "VATABLE" },
+        { unitPrice: "1000", quantity: "1", vatClass: "EXEMPT" },
+      ],
+      { withholdEwt: false, discount: { type: "AMOUNT", value: "200" } },
+    );
+    expect(t.vatableSales).toBe("900.00");
+    expect(t.exemptSales).toBe("900.00");
+    expect(t.discount).toBe("200.00");
+    expect(t.subtotal).toBe("1800.00");
+    expect(t.vatAmount).toBe("108.00"); // 12% of 900
+    expect(t.total).toBe("1908.00");
+  });
+
+  it("clamps a discount larger than the sale", () => {
+    const t = computeTotals([{ unitPrice: "1000", quantity: "1", vatClass: "VATABLE" }], {
+      withholdEwt: false,
+      discount: { type: "AMOUNT", value: "5000" },
+    });
+    expect(t.discount).toBe("1000.00");
+    expect(t.subtotal).toBe("0.00");
+    expect(t.vatAmount).toBe("0.00");
+    expect(t.total).toBe("0.00");
+  });
+});
+
 describe("TIN validation", () => {
   it("accepts 9-digit and branch-coded TINs, with or without dashes", () => {
     expect(isValidTin("123-456-789")).toBe(true);

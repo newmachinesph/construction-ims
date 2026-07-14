@@ -2,8 +2,10 @@ import { z } from "zod";
 import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { created, handler, ok, parseBody, parseQuery } from "@/lib/api";
 import { requirePermission } from "@/lib/auth/dal";
+import { BusinessRuleError } from "@/lib/errors";
 import { db } from "@/db";
-import { items, categories, uomEnum } from "@/db/schema";
+import { items, categories } from "@/db/schema";
+import { uomExists } from "@/lib/services/uom";
 import { moneySchema, paginationSchema, uuidSchema, vatClassSchema } from "@/lib/validation";
 
 /** Non-negative quantity (up to 3 dp) — reorder levels may legitimately be 0. */
@@ -26,7 +28,7 @@ const createItemSchema = z.object({
   sku: z.string().trim().min(1).max(40),
   name: z.string().trim().min(1).max(200),
   categoryId: uuidSchema,
-  uom: z.enum(uomEnum.enumValues),
+  uom: z.string().trim().min(1).max(24),
   standardCost: moneySchema,
   sellingPrice: moneySchema.optional(),
   reorderPoint: nonNegQty,
@@ -93,6 +95,11 @@ export const GET = handler(async (req) => {
 export const POST = handler(async (req) => {
   await requirePermission("item:write");
   const body = await parseBody(req, createItemSchema);
+  // uom is now a FK to the uoms table (not a compiled enum); check it here so a
+  // bad code returns a clean 422, not a raw FK violation.
+  if (!(await uomExists(body.uom))) {
+    throw new BusinessRuleError(`Unknown unit of measure: ${body.uom}`);
+  }
   const [item] = await db.insert(items).values(body).returning();
   return created(item);
 });

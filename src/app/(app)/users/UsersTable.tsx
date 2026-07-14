@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Pencil, X } from "lucide-react";
+import { Check, Pencil, Trash2, X } from "lucide-react";
 import { Input, Select, FormError } from "@/components/ui/Field";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Button } from "@/components/ui/Button";
@@ -28,10 +28,12 @@ export function UsersTable({
   rows,
   roles,
   canWrite,
+  currentUserId,
 }: {
   rows: UserRow[];
   roles: RoleOption[];
   canWrite: boolean;
+  currentUserId: string;
 }) {
   const router = useRouter();
   const roleLabels = new Map(roles.map((r) => [r.key, r.label]));
@@ -60,6 +62,25 @@ export function UsersTable({
     setError(null);
     setEditingId(u.id);
     setDraft({ fullName: u.fullName, email: u.email });
+  }
+
+  async function removeUser(u: UserRow) {
+    if (
+      !window.confirm(
+        `Delete ${u.fullName}? This cannot be undone. A user who has any activity cannot be deleted — deactivate them instead.`,
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    setPendingId(u.id);
+    const result = await api.del(`/api/users/${u.id}`);
+    setPendingId(null);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    router.refresh();
   }
 
   const colCount = canWrite ? 6 : 5;
@@ -203,15 +224,30 @@ export function UsersTable({
                             </Button>
                           </span>
                         ) : (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            aria-label={`Edit ${u.fullName}`}
-                            disabled={busy}
-                            onClick={() => startEdit(u)}
-                          >
-                            <Pencil className="size-4" />
-                          </Button>
+                          <span className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              aria-label={`Edit ${u.fullName}`}
+                              disabled={busy}
+                              onClick={() => startEdit(u)}
+                            >
+                              <Pencil className="size-4" />
+                            </Button>
+                            {/* Admin and the current user are never deletable (the
+                                server enforces this too — no lock-out, no self-delete). */}
+                            {!isAdmin && u.id !== currentUserId ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                aria-label={`Delete ${u.fullName}`}
+                                disabled={busy}
+                                onClick={() => removeUser(u)}
+                              >
+                                <Trash2 className="size-4" />
+                              </Button>
+                            ) : null}
+                          </span>
                         )}
                       </Td>
                     ) : null}

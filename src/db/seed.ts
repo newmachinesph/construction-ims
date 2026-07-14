@@ -11,6 +11,7 @@ import {
   roles,
   stockLevels,
   suppliers,
+  uoms,
   users,
   warehouses,
   type Role,
@@ -18,6 +19,7 @@ import {
   type VatClass,
 } from "./schema";
 import { ROLE_LABELS, ROLE_PERMISSIONS, SYSTEM_ROLE_KEYS } from "../lib/rbac";
+import { UOM_LABELS } from "../lib/ph";
 
 // Seed runs under tsx (plain Node), so it opens its own connection rather than
 // importing @/db — that module is `server-only` and would throw here.
@@ -147,6 +149,15 @@ async function seed() {
   // Document series.
   for (const s of SERIES) {
     await db.insert(documentSeries).values(s).onConflictDoNothing();
+  }
+
+  // Units of measure (the built-in construction units). isSystem so they can
+  // never be deleted; items reference these by code via FK.
+  for (const [code, label] of Object.entries(UOM_LABELS)) {
+    await db
+      .insert(uoms)
+      .values({ code, label, isSystem: true })
+      .onConflictDoUpdate({ target: uoms.code, set: { label } });
   }
 
   // Categories.
