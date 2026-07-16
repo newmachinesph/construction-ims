@@ -299,6 +299,88 @@ export async function approveAndPostAdjustment(actor: SessionUser, adjId: string
   });
 }
 
+/** Reject a DRAFT adjustment: it is cancelled, never posts, no stock moves. */
+export async function rejectAdjustment(actor: SessionUser, adjId: string, reason?: string) {
+  const existing = await db.query.stockAdjustments.findFirst({ where: eq(stockAdjustments.id, adjId) });
+  if (!existing) throw new NotFoundError("Stock adjustment");
+  if (existing.status !== "DRAFT") {
+    throw new ConflictError(`Cannot reject an adjustment in status ${existing.status}.`);
+  }
+
+  const [updated] = await db
+    .update(stockAdjustments)
+    .set({ status: "CANCELLED", updatedAt: new Date() })
+    .where(and(eq(stockAdjustments.id, adjId), eq(stockAdjustments.status, "DRAFT")))
+    .returning();
+  if (!updated) throw new ConflictError("The adjustment was already actioned.");
+
+  await writeAudit(db, {
+    actorId: actor.id,
+    actorEmail: actor.email,
+    action: "ADJUSTMENT_REJECT",
+    entity: "stock_adjustment",
+    entityId: adjId,
+    before: { status: "DRAFT" },
+    after: { status: "CANCELLED", reason: reason?.trim() || null },
+  });
+  return updated;
+}
+
+/**
+ * Edit a DRAFT adjustment's header and lines. Drafts only — once posted or
+ * cancelled it is immutable (a correction is a new adjustment, never an edit of a
+ * posted one). Lines are replaced wholesale, matching how the form submits them.
+ */
+export async function updateDraftAdjustment(
+  actor: SessionUser,
+  adjId: string,
+  input: CreateAdjustmentInput,
+) {
+  if (input.lines.length === 0) throw new BusinessRuleError("An adjustment needs at least one line.");
+  if (input.lines.some((l) => Number(l.qtyDelta) === 0)) {
+    throw new BusinessRuleError("Adjustment lines cannot have a zero delta.");
+  }
+
+  return db.transaction(async (tx) => {
+    const adj = await tx.query.stockAdjustments.findFirst({ where: eq(stockAdjustments.id, adjId) });
+    if (!adj) throw new NotFoundError("Stock adjustment");
+    if (adj.status !== "DRAFT") throw new ConflictError(`Cannot edit an adjustment in status ${adj.status}.`);
+
+    await tx
+      .update(stockAdjustments)
+      .set({
+        warehouseId: input.warehouseId,
+        reason: input.reason,
+        remarks: input.remarks ?? null,
+        updatedAt: new Date(),
+      })
+      .where(eq(stockAdjustments.id, adjId));
+
+    await tx.delete(stockAdjustmentItems).where(eq(stockAdjustmentItems.adjustmentId, adjId));
+    await tx.insert(stockAdjustmentItems).values(
+      input.lines.map((l) => ({
+        adjustmentId: adjId,
+        itemId: l.itemId,
+        qtyDelta: l.qtyDelta,
+        unitCost: l.unitCost ?? null,
+        remarks: l.remarks,
+      })),
+    );
+
+    await writeAudit(tx, {
+      actorId: actor.id,
+      actorEmail: actor.email,
+      action: "ADJUSTMENT_UPDATE",
+      entity: "stock_adjustment",
+      entityId: adjId,
+      after: { reason: input.reason, lines: input.lines.length },
+    });
+
+    const [updated] = await tx.select().from(stockAdjustments).where(eq(stockAdjustments.id, adjId));
+    return updated;
+  });
+}
+
 /* ------------------------------ queries ----------------------------- */
 
 /** Stock on hand across every item/warehouse, joined for display. */

@@ -1,7 +1,7 @@
-import { count, eq, inArray } from "drizzle-orm";
+import { asc, count, eq, inArray } from "drizzle-orm";
 import { Boxes, FileWarning, PackageCheck, ShoppingCart } from "lucide-react";
 import { db } from "@/db";
-import { items, materialRequisitions, purchaseOrders } from "@/db/schema";
+import { items, materialRequisitions, purchaseOrders, warehouses } from "@/db/schema";
 import { requirePermissionPage, can } from "@/lib/auth/dal";
 import { lowStockItems, recentMovements, listStock } from "@/lib/services/stock";
 import { salesReport, type Granularity } from "@/lib/services/salesReport";
@@ -43,14 +43,23 @@ export default async function DashboardPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   await requirePermissionPage("stock:read");
-  const [canCost, canSeeSales, sp] = await Promise.all([
+  const [canCost, canSeeSales, sp, warehouseRows] = await Promise.all([
     can("report:cost"),
     can("sale:read"),
     searchParams,
+    db
+      .select({ id: warehouses.id, name: warehouses.name })
+      .from(warehouses)
+      .where(eq(warehouses.isActive, true))
+      .orderBy(asc(warehouses.name)),
   ]);
 
   const { from, to, granularity } = parseRange(sp);
-  const report = canSeeSales ? await salesReport(from, to, granularity) : null;
+  // Trust nothing from the query string: only a real warehouse id filters; anything
+  // else falls back to the company-wide report.
+  const rawWarehouse = Array.isArray(sp.warehouse) ? sp.warehouse[0] : sp.warehouse;
+  const warehouseId = warehouseRows.some((w) => w.id === rawWarehouse) ? rawWarehouse : undefined;
+  const report = canSeeSales ? await salesReport(from, to, granularity, warehouseId) : null;
 
   const [stock, lowStock, movements, activeSkuRows, openPoRows, pendingMrRows, uomLabels] =
     await Promise.all([
@@ -92,7 +101,13 @@ export default async function DashboardPage({
                 Posted sales only — a voided invoice is not revenue.
               </p>
             </div>
-            <SalesRangeForm from={from} to={to} granularity={granularity} />
+            <SalesRangeForm
+              from={from}
+              to={to}
+              granularity={granularity}
+              warehouses={warehouseRows}
+              warehouse={warehouseId ?? ""}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">

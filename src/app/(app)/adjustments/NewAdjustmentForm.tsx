@@ -36,18 +36,33 @@ function emptyLine(): LineRow {
   return { key: crypto.randomUUID(), itemId: "", qtyDelta: "", unitCost: "", remarks: "" };
 }
 
+interface ExistingAdjustment {
+  id: string;
+  warehouseId: string;
+  reason: (typeof REASONS)[number];
+  remarks: string;
+  lines: { itemId: string; qtyDelta: string; unitCost: string; remarks: string }[];
+}
+
 interface NewAdjustmentFormProps {
   warehouses: Option[];
   items: ItemOption[];
+  /** When set, the form edits this DRAFT adjustment instead of creating a new one. */
+  existing?: ExistingAdjustment;
 }
 
-export function NewAdjustmentForm({ warehouses, items }: NewAdjustmentFormProps) {
+export function NewAdjustmentForm({ warehouses, items, existing }: NewAdjustmentFormProps) {
   const router = useRouter();
+  const isEdit = Boolean(existing);
 
-  const [warehouseId, setWarehouseId] = useState("");
-  const [reason, setReason] = useState<(typeof REASONS)[number]>("COUNT_VARIANCE");
-  const [remarks, setRemarks] = useState("");
-  const [lines, setLines] = useState<LineRow[]>([emptyLine()]);
+  const [warehouseId, setWarehouseId] = useState(existing?.warehouseId ?? "");
+  const [reason, setReason] = useState<(typeof REASONS)[number]>(existing?.reason ?? "COUNT_VARIANCE");
+  const [remarks, setRemarks] = useState(existing?.remarks ?? "");
+  const [lines, setLines] = useState<LineRow[]>(
+    existing && existing.lines.length > 0
+      ? existing.lines.map((l) => ({ key: crypto.randomUUID(), ...l }))
+      : [emptyLine()],
+  );
 
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,7 +95,7 @@ export function NewAdjustmentForm({ warehouses, items }: NewAdjustmentFormProps)
     }
 
     setPending(true);
-    const res = await api.post("/api/adjustments", {
+    const payload = {
       warehouseId,
       reason,
       remarks: remarks.trim() || undefined,
@@ -91,23 +106,31 @@ export function NewAdjustmentForm({ warehouses, items }: NewAdjustmentFormProps)
         unitCost: l.unitCost.trim() || undefined,
         remarks: l.remarks.trim() || undefined,
       })),
-    });
+    };
+    const res = existing
+      ? await api.patch(`/api/adjustments/${existing.id}`, payload)
+      : await api.post("/api/adjustments", payload);
     setPending(false);
 
     if (!res.ok) {
       setError(res.error);
       return;
     }
-    setWarehouseId("");
-    setReason("COUNT_VARIANCE");
-    setRemarks("");
-    setLines([emptyLine()]);
+    // Only the create form clears itself; the edit form keeps the saved values.
+    if (!existing) {
+      setWarehouseId("");
+      setReason("COUNT_VARIANCE");
+      setRemarks("");
+      setLines([emptyLine()]);
+    }
     router.refresh();
   }
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-card border border-line bg-surface p-5">
-      <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">New adjustment</h2>
+      <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
+        {isEdit ? "Edit adjustment" : "New adjustment"}
+      </h2>
       <FormError>{error}</FormError>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -252,7 +275,7 @@ export function NewAdjustmentForm({ warehouses, items }: NewAdjustmentFormProps)
 
       <div className="flex justify-end">
         <Button type="submit" disabled={pending}>
-          {pending ? "Creating…" : "Create adjustment"}
+          {pending ? "Saving…" : isEdit ? "Save changes" : "Create adjustment"}
         </Button>
       </div>
     </form>

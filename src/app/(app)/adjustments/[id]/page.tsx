@@ -1,4 +1,7 @@
 import { notFound } from "next/navigation";
+import { asc, eq } from "drizzle-orm";
+import { db } from "@/db";
+import { items, warehouses } from "@/db/schema";
 import { getAdjustment } from "@/lib/services/stock";
 import { can, requirePermissionPage } from "@/lib/auth/dal";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -6,6 +9,8 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Table, TableWrap, THead, TBody, Th, Tr, Td, EmptyRow } from "@/components/ui/Table";
 import { formatManila, formatQty, UOM_LABELS } from "@/lib/ph";
 import { ApproveAdjustmentButton } from "../ApproveAdjustmentButton";
+import { RejectAdjustmentButton } from "../RejectAdjustmentButton";
+import { NewAdjustmentForm } from "../NewAdjustmentForm";
 
 function uomLabel(uom: string): string {
   return UOM_LABELS[uom as keyof typeof UOM_LABELS] ?? uom;
@@ -17,7 +22,29 @@ export default async function AdjustmentDetailPage({ params }: { params: Promise
 
   const adj = await getAdjustment(id).catch(() => null);
   if (!adj) notFound();
-  const canApprove = adj.status === "DRAFT" && (await can("adjustment:approve"));
+
+  // Only a DRAFT can be approved, rejected or edited — a posted/cancelled one is
+  // immutable. Approve stays a separate person from the creator (enforced server-side).
+  const isDraft = adj.status === "DRAFT";
+  const [canApprove, canEdit] = await Promise.all([
+    isDraft ? can("adjustment:approve") : Promise.resolve(false),
+    isDraft ? can("adjustment:create") : Promise.resolve(false),
+  ]);
+
+  const [warehouseOptions, itemOptions] = canEdit
+    ? await Promise.all([
+        db
+          .select({ id: warehouses.id, name: warehouses.name })
+          .from(warehouses)
+          .where(eq(warehouses.isActive, true))
+          .orderBy(asc(warehouses.name)),
+        db
+          .select({ id: items.id, sku: items.sku, name: items.name, uom: items.uom })
+          .from(items)
+          .where(eq(items.isActive, true))
+          .orderBy(asc(items.name)),
+      ])
+    : [[], []];
 
   return (
     <>
@@ -84,7 +111,31 @@ export default async function AdjustmentDetailPage({ params }: { params: Promise
         </TableWrap>
       </section>
 
-      {canApprove ? <ApproveAdjustmentButton id={adj.id} /> : null}
+      {canApprove ? (
+        <div className="flex items-center justify-end gap-2">
+          <ApproveAdjustmentButton id={adj.id} />
+          <RejectAdjustmentButton id={adj.id} />
+        </div>
+      ) : null}
+
+      {canEdit ? (
+        <NewAdjustmentForm
+          warehouses={warehouseOptions}
+          items={itemOptions}
+          existing={{
+            id: adj.id,
+            warehouseId: adj.warehouseId,
+            reason: adj.reason,
+            remarks: adj.remarks ?? "",
+            lines: adj.lines.map((l) => ({
+              itemId: l.itemId,
+              qtyDelta: l.qtyDelta,
+              unitCost: l.unitCost ?? "",
+              remarks: l.remarks ?? "",
+            })),
+          }}
+        />
+      ) : null}
     </>
   );
 }

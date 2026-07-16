@@ -63,13 +63,19 @@ export interface SalesReport {
   };
 }
 
-const POSTED_IN_RANGE = (from: string, to: string) =>
-  and(eq(sales.status, "POSTED"), between(sales.saleDate, from, to));
+const POSTED_IN_RANGE = (from: string, to: string, warehouseId?: string) =>
+  and(
+    eq(sales.status, "POSTED"),
+    between(sales.saleDate, from, to),
+    warehouseId ? eq(sales.warehouseId, warehouseId) : undefined,
+  );
 
 export async function salesReport(
   from: string,
   to: string,
   granularity: Granularity,
+  /** Limit to one warehouse/store; omit for company-wide. */
+  warehouseId?: string,
 ): Promise<SalesReport> {
   // Bucket key: 'YYYY-MM-DD' for days, 'YYYY-MM' for months. Done in SQL so
   // Postgres groups, not Node.
@@ -91,7 +97,7 @@ export async function salesReport(
         invoices: sql<number>`count(*)::int`,
       })
       .from(sales)
-      .where(POSTED_IN_RANGE(from, to))
+      .where(POSTED_IN_RANGE(from, to, warehouseId))
       .groupBy(period)
       .orderBy(period),
 
@@ -102,7 +108,7 @@ export async function salesReport(
       })
       .from(saleItems)
       .innerJoin(sales, eq(sales.id, saleItems.saleId))
-      .where(POSTED_IN_RANGE(from, to))
+      .where(POSTED_IN_RANGE(from, to, warehouseId))
       .groupBy(period)
       .orderBy(period),
 
@@ -117,7 +123,7 @@ export async function salesReport(
       .innerJoin(sales, eq(sales.id, saleItems.saleId))
       .innerJoin(items, eq(items.id, saleItems.itemId))
       .innerJoin(categories, eq(categories.id, items.categoryId))
-      .where(POSTED_IN_RANGE(from, to))
+      .where(POSTED_IN_RANGE(from, to, warehouseId))
       .groupBy(categories.name)
       .orderBy(sql`sum(${saleItems.lineTotal}) desc`),
 
@@ -136,7 +142,7 @@ export async function salesReport(
       .innerJoin(sales, eq(sales.id, saleItems.saleId))
       .innerJoin(items, eq(items.id, saleItems.itemId))
       .innerJoin(categories, eq(categories.id, items.categoryId))
-      .where(POSTED_IN_RANGE(from, to))
+      .where(POSTED_IN_RANGE(from, to, warehouseId))
       .groupBy(items.sku, items.name, categories.name, items.uom)
       .orderBy(sql`sum(${saleItems.lineTotal}) desc`),
   ]);

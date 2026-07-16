@@ -10,13 +10,36 @@ export function SalesRangeForm({
   from,
   to,
   granularity,
+  warehouses,
+  warehouse,
 }: {
   from: string;
   to: string;
   granularity: "day" | "month";
+  warehouses: { id: string; name: string }[];
+  /** Selected warehouse id, or "" for all. */
+  warehouse: string;
 }) {
   return (
     <form method="GET" className="flex flex-wrap items-end gap-3">
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="warehouse" className="text-xs font-medium uppercase tracking-wide text-ink-soft">
+          Store
+        </label>
+        <select
+          id="warehouse"
+          name="warehouse"
+          defaultValue={warehouse}
+          className="h-9 rounded-md border border-line-strong bg-surface px-2.5 text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
+        >
+          <option value="">All stores</option>
+          {warehouses.map((w) => (
+            <option key={w.id} value={w.id}>
+              {w.name}
+            </option>
+          ))}
+        </select>
+      </div>
       <div className="flex flex-col gap-1.5">
         <label htmlFor="from" className="text-xs font-medium uppercase tracking-wide text-ink-soft">
           From

@@ -78,7 +78,7 @@ export function SalesReportSection({
             columns={[
               { key: "category", label: "Category" },
               { key: "qty", label: "Qty" },
-              { key: "netSales", label: "Net sales (PHP)" },
+              { key: "netSales", label: "Total sales (PHP)" },
               ...(canCost
                 ? ([
                     { key: "cogs", label: "COGS (PHP)" },
@@ -94,7 +94,7 @@ export function SalesReportSection({
             <THead>
               <Th>Category</Th>
               <Th numeric>Qty</Th>
-              <Th numeric>Net sales</Th>
+              <Th numeric>Total sales</Th>
               {canCost ? <Th numeric>COGS</Th> : null}
               {canCost ? <Th numeric>Net</Th> : null}
             </THead>
@@ -141,7 +141,7 @@ export function SalesReportSection({
               { key: "category", label: "Category" },
               { key: "qty", label: "Qty" },
               { key: "uom", label: "UoM" },
-              { key: "netSales", label: "Net sales (PHP)" },
+              { key: "netSales", label: "Total sales (PHP)" },
               ...(canCost
                 ? ([
                     { key: "cogs", label: "COGS (PHP)" },
@@ -159,7 +159,7 @@ export function SalesReportSection({
               <Th>Item</Th>
               <Th>Category</Th>
               <Th numeric>Qty</Th>
-              <Th numeric>Net sales</Th>
+              <Th numeric>Total sales</Th>
               {canCost ? <Th numeric>COGS</Th> : null}
               {canCost ? <Th numeric>Net</Th> : null}
             </THead>
