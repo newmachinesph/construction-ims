@@ -34,6 +34,7 @@ const createSaleSchema = z.object({
   // tampered client total cannot under-ring VAT.
   discountType: z.enum(["AMOUNT", "PERCENT"]).nullish(),
   discountValue: moneySchema.nullish(),
+  deliveryFee: moneySchema.nullish(),
   lines: z.array(saleLineSchema).min(1, "A sale needs at least one line."),
 }).refine((v) => v.paymentMethod !== "CASH" || v.amountTendered != null, {
   message: "A cash sale must record the amount tendered.",

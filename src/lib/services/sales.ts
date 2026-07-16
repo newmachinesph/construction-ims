@@ -7,7 +7,7 @@ import type { PaymentMethod } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth/session";
 import { assertSeparationOfDuties } from "@/lib/rbac";
 import { BusinessRuleError, ConflictError, NotFoundError } from "@/lib/errors";
-import { computeTotals, lineTotal } from "@/lib/ph";
+import { computeTotals, fromCentavos, lineTotal, toCentavos } from "@/lib/ph";
 import { applyMovement, nextDocumentNumber, writeAudit } from "./ledger";
 
 /**
@@ -49,6 +49,8 @@ export interface CreateSaleInput {
   /** Invoice-level discount: a peso amount or a percentage of the net. */
   discountType?: "AMOUNT" | "PERCENT" | null;
   discountValue?: string | null;
+  /** Delivery/freight charged on top of the goods total (added after VAT). */
+  deliveryFee?: string | null;
   lines: SaleLineInput[];
 }
 
@@ -116,6 +118,11 @@ export async function createAndPostSale(actor: SessionUser, input: CreateSaleInp
     },
   );
 
+  // Delivery/freight rides on top of the goods total, after VAT. Kept out of the
+  // VAT base and the discount, and out of net-sales reporting (which reads subtotal).
+  const deliveryFee = input.deliveryFee && Number(input.deliveryFee) > 0 ? input.deliveryFee : "0";
+  const grandTotal = fromCentavos(toCentavos(totals.total) + toCentavos(deliveryFee));
+
   // A cash sale must record what was handed over. Guarding on `&& amountTendered`
   // would make the whole check opt-in: omit the field and a cash sale posts with
   // no tender recorded and no validation that the cash even covered the bill.
@@ -123,9 +130,9 @@ export async function createAndPostSale(actor: SessionUser, input: CreateSaleInp
     if (input.amountTendered === null || input.amountTendered === undefined) {
       throw new BusinessRuleError("A cash sale must record the amount tendered.");
     }
-    if (Number(input.amountTendered) + 1e-9 < Number(totals.total)) {
+    if (Number(input.amountTendered) + 1e-9 < Number(grandTotal)) {
       throw new BusinessRuleError(
-        `Cash tendered (${input.amountTendered}) is less than the total due (${totals.total}).`,
+        `Cash tendered (${input.amountTendered}) is less than the total due (${grandTotal}).`,
       );
     }
   }
@@ -151,7 +158,8 @@ export async function createAndPostSale(actor: SessionUser, input: CreateSaleInp
         discountValue: discount ? input.discountValue : null,
         discountAmount: totals.discount,
         vatAmount: totals.vatAmount,
-        total: totals.total,
+        deliveryFee,
+        total: grandTotal,
         paymentMethod: input.paymentMethod,
         amountTendered: input.amountTendered ?? null,
         notes: input.notes,

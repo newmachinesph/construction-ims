@@ -767,7 +767,10 @@ export const sales = pgTable(
     discountAmount: money("discount_amount").notNull().default("0"),
     /** 12% output VAT on the discounted vatable base. */
     vatAmount: money("vat_amount").notNull().default("0"),
-    /** subtotal + VAT — what the customer pays. */
+    /** Optional delivery/freight charged on top — added after VAT, not part of the
+     *  VAT base or the discount. Kept separate so net-sales reporting excludes it. */
+    deliveryFee: money("delivery_fee").notNull().default("0"),
+    /** subtotal + VAT + delivery fee — what the customer pays. */
     total: money("total").notNull().default("0"),
     paymentMethod: paymentMethodEnum("payment_method").notNull().default("CASH"),
     /** Cash handed over; change = tendered - total. Null for non-cash. */

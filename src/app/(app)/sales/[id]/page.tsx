@@ -173,6 +173,12 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                 <dd className="tabular text-ink-soft">{formatPHP(sale.vatAmount)}</dd>
               </div>
             ) : null}
+            {Number(sale.deliveryFee) > 0 ? (
+              <div className="flex justify-between">
+                <dt className="text-muted">Delivery fee</dt>
+                <dd className="tabular text-ink-soft">{formatPHP(sale.deliveryFee)}</dd>
+              </div>
+            ) : null}
             <div className="mt-2 flex justify-between border-t border-line pt-2 text-base font-semibold">
               <dt className="text-ink">Total</dt>
               <dd className="tabular text-ink">{formatPHP(sale.total)}</dd>

@@ -6,7 +6,8 @@ import type { SessionUser } from "@/lib/auth/session";
 import { BusinessRuleError } from "@/lib/errors";
 import { parseCsvRecords } from "@/lib/csvParse";
 import { toCsv } from "@/lib/csv";
-import { buildUomMatcher, normalizeUomKey } from "./uom";
+import { buildUomMatcher, createUom, normalizeUomKey } from "./uom";
+import { createCategory } from "./categories";
 import { writeAudit } from "./ledger";
 
 /**
@@ -47,6 +48,9 @@ export interface ItemImportPreview {
   rows: ItemImportRow[];
   toCreate: number;
   toSkip: number;
+  /** Distinct categories/units in the file that don't exist yet — created on commit. */
+  newCategories: number;
+  newUnits: number;
   errorCount: number;
 }
 
@@ -77,6 +81,11 @@ function isTruthy(v: string): boolean {
   return ["yes", "y", "true", "1"].includes(v.trim().toLowerCase());
 }
 
+/** Strip thousand-separator commas Excel writes ("1,160.00" -> "1160.00"). */
+function cleanNum(raw: string | undefined): string {
+  return (raw ?? "").trim().replace(/,/g, "");
+}
+
 /** Parse + validate the file against the catalogue. Pure read — writes nothing. */
 export async function previewItemsImport(csvText: string): Promise<ItemImportPreview> {
   const { headers, rows } = parseCsvRecords(csvText);
@@ -105,6 +114,10 @@ export async function previewItemsImport(csvText: string): Promise<ItemImportPre
     catByKey.set(normalizeUomKey(c.name), c.code);
   }
   const seen = new Set<string>();
+  // A category/unit in the file but not the catalogue isn't an error — it is
+  // created on commit. Dedup by normalized key so each is made once.
+  const newCategoryNames = new Map<string, string>();
+  const newUnitLabels = new Map<string, string>();
 
   const results: ItemImportRow[] = rows.map((r, i) => {
     const line = i + 2; // +1 for 0-index, +1 for the header row
@@ -120,9 +133,11 @@ export async function previewItemsImport(csvText: string): Promise<ItemImportPre
     if (!alreadyExists) {
       if (!r.name) errors.push("name is required");
       if (!r.category) errors.push("category is required");
-      else if (!catByKey.has(normalizeUomKey(r.category))) errors.push(`unknown category "${r.category}"`);
+      else if (!catByKey.has(normalizeUomKey(r.category))) {
+        newCategoryNames.set(normalizeUomKey(r.category), r.category.trim());
+      }
       if (!r.uom) errors.push("uom is required");
-      else if (!matchUom(r.uom)) errors.push(`unknown uom "${r.uom}"`);
+      else if (!matchUom(r.uom)) newUnitLabels.set(normalizeUomKey(r.uom), r.uom.trim());
 
       for (const [field, re, kind] of [
         ["cost", MONEY_RE, "money"],
@@ -130,7 +145,7 @@ export async function previewItemsImport(csvText: string): Promise<ItemImportPre
         ["reorder_point", QTY_RE, "quantity"],
         ["reorder_qty", QTY_RE, "quantity"],
       ] as const) {
-        const raw = (r[field] ?? "").trim();
+        const raw = cleanNum(r[field]);
         if (raw !== "" && !re.test(raw)) errors.push(`${field} must be a non-negative ${kind}`);
       }
       if (r.vat_class && !VAT_CLASSES.has(r.vat_class.trim().toUpperCase())) {
@@ -151,6 +166,8 @@ export async function previewItemsImport(csvText: string): Promise<ItemImportPre
     rows: results,
     toCreate: results.filter((r) => r.action === "create" && r.errors.length === 0).length,
     toSkip: results.filter((r) => r.action === "skip-existing").length,
+    newCategories: newCategoryNames.size,
+    newUnits: newUnitLabels.size,
     errorCount: results.reduce((t, r) => t + r.errors.length, 0),
   };
 }
@@ -166,11 +183,48 @@ export async function commitItemsImport(actor: SessionUser, csvText: string) {
 
   const { rows } = parseCsvRecords(csvText);
 
+  const [existingItems, existingCats, existingUoms] = await Promise.all([
+    db.select({ sku: items.sku }).from(items),
+    db.select({ code: categories.code, name: categories.name }).from(categories),
+    db.select({ code: uoms.code, label: uoms.label }).from(uoms),
+  ]);
+  const existingSkus = new Set(existingItems.map((i) => i.sku));
+  const catKeys = new Set<string>();
+  for (const c of existingCats) {
+    catKeys.add(normalizeUomKey(c.code));
+    catKeys.add(normalizeUomKey(c.name));
+  }
+  const uomMatch = buildUomMatcher(existingUoms);
+  const rowsToCreate = rows.filter((r) => !existingSkus.has(r.sku.trim()));
+
+  // Create the categories/units the file needs but the catalogue lacks — once
+  // each. Done before the item transaction; if that later fails, these remain as
+  // harmless empty master rows (same trade-off as the stock importer).
+  let newCategories = 0;
+  const madeCatKeys = new Set<string>();
+  for (const r of rowsToCreate) {
+    const key = normalizeUomKey(r.category);
+    if (!catKeys.has(key) && !madeCatKeys.has(key)) {
+      await createCategory(actor, { name: r.category.trim() });
+      madeCatKeys.add(key);
+      newCategories++;
+    }
+  }
+  let newUnits = 0;
+  const madeUomKeys = new Set<string>();
+  for (const r of rowsToCreate) {
+    const key = normalizeUomKey(r.uom);
+    if (!uomMatch(r.uom) && !madeUomKeys.has(key)) {
+      await createUom(actor, { label: r.uom.trim() });
+      madeUomKeys.add(key);
+      newUnits++;
+    }
+  }
+
   const createdSkus = await db.transaction(async (tx) => {
-    const [cats, uomRows, existing] = await Promise.all([
+    const [cats, uomRows] = await Promise.all([
       tx.select({ id: categories.id, code: categories.code, name: categories.name }).from(categories),
       tx.select({ code: uoms.code, label: uoms.label }).from(uoms),
-      tx.select({ sku: items.sku }).from(items),
     ]);
     const catIdByKey = new Map<string, string>();
     for (const c of cats) {
@@ -178,12 +232,13 @@ export async function commitItemsImport(actor: SessionUser, csvText: string) {
       catIdByKey.set(normalizeUomKey(c.name), c.id);
     }
     const matchUom = buildUomMatcher(uomRows);
-    const existingSkus = new Set(existing.map((i) => i.sku));
 
     const created: string[] = [];
+    const seen = new Set(existingSkus); // skip existing + guard same-file dups
     for (const r of rows) {
       const sku = r.sku.trim();
-      if (existingSkus.has(sku)) continue; // never overwrite an existing item
+      if (seen.has(sku)) continue;
+      seen.add(sku);
 
       await tx.insert(items).values({
         sku,
@@ -191,14 +246,13 @@ export async function commitItemsImport(actor: SessionUser, csvText: string) {
         categoryId: catIdByKey.get(normalizeUomKey(r.category))!,
         uom: matchUom(r.uom)!,
         vatClass: (r.vat_class ? r.vat_class.toUpperCase() : "VATABLE") as (typeof vatClassEnum.enumValues)[number],
-        standardCost: r.cost || "0",
-        sellingPrice: r.srp || "0",
-        reorderPoint: r.reorder_point || "0",
-        reorderQty: r.reorder_qty || "0",
+        standardCost: cleanNum(r.cost) || "0",
+        sellingPrice: cleanNum(r.srp) || "0",
+        reorderPoint: cleanNum(r.reorder_point) || "0",
+        reorderQty: cleanNum(r.reorder_qty) || "0",
         isWeatherSensitive: r.weather_sensitive ? isTruthy(r.weather_sensitive) : false,
       });
       created.push(sku);
-      existingSkus.add(sku); // guard against a same-file dup slipping past preview
     }
 
     await writeAudit(tx, {
@@ -206,11 +260,11 @@ export async function commitItemsImport(actor: SessionUser, csvText: string) {
       actorEmail: actor.email,
       action: "ITEMS_IMPORT",
       entity: "item",
-      after: { created: created.length, skus: created.slice(0, 50) },
+      after: { created: created.length, newCategories, newUnits, skus: created.slice(0, 50) },
     });
 
     return created;
   });
 
-  return { itemsCreated: createdSkus.length, skipped: preview.toSkip };
+  return { itemsCreated: createdSkus.length, skipped: preview.toSkip, newCategories, newUnits };
 }

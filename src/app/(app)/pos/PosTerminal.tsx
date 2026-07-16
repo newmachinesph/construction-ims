@@ -75,6 +75,8 @@ export function PosTerminal({
   const [customerTin, setCustomerTin] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<(typeof PAYMENT_METHODS)[number]>("CASH");
   const [amountTendered, setAmountTendered] = useState("");
+  const [saleDate, setSaleDate] = useState(manilaToday());
+  const [deliveryFee, setDeliveryFee] = useState("");
   const [discountMode, setDiscountMode] = useState<"AMOUNT" | "PERCENT">("AMOUNT");
   const [discountValue, setDiscountValue] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -118,10 +120,12 @@ export function PosTerminal({
     [lines, vatRate, hasDiscount, discountMode, discountValue],
   );
 
+  // Delivery rides on top of the goods total, after VAT — matches the server.
+  const deliveryNum = Number(deliveryFee) > 0 ? Number(deliveryFee) : 0;
+  const totalDue = Number(totals.total) + deliveryNum;
+
   const change =
-    paymentMethod === "CASH" && amountTendered
-      ? Number(amountTendered) - Number(totals.total)
-      : null;
+    paymentMethod === "CASH" && amountTendered ? Number(amountTendered) - totalDue : null;
 
   function addItem(s: Sellable) {
     setQuery("");
@@ -184,7 +188,7 @@ export function PosTerminal({
       setError(`Not enough stock for: ${overSold.map((l) => l.sku).join(", ")}.`);
       return;
     }
-    if (paymentMethod === "CASH" && amountTendered && Number(amountTendered) < Number(totals.total)) {
+    if (paymentMethod === "CASH" && amountTendered && Number(amountTendered) < totalDue) {
       setError("Cash tendered is less than the total due.");
       return;
     }
@@ -195,11 +199,12 @@ export function PosTerminal({
       customerId: customerId || null,
       customerName: customerId ? null : customerName.trim() || null,
       customerTin: customerId ? null : customerTin.trim() || null,
-      saleDate: manilaToday(),
+      saleDate: saleDate || manilaToday(),
       paymentMethod,
       amountTendered: paymentMethod === "CASH" && amountTendered ? amountTendered : null,
       discountType: hasDiscount ? discountMode : null,
       discountValue: hasDiscount ? discountValue : null,
+      deliveryFee: deliveryNum > 0 ? deliveryFee : null,
       // No vatClass: the server reads it from the item master.
       lines: lines.map((l) => ({
         itemId: l.itemId,
@@ -419,6 +424,27 @@ export function PosTerminal({
           </>
         ) : null}
 
+        <Field label="Sale date" htmlFor="pos-date">
+          <Input
+            id="pos-date"
+            type="date"
+            value={saleDate}
+            onChange={(e) => setSaleDate(e.target.value)}
+          />
+        </Field>
+
+        <Field label="Delivery fee" htmlFor="pos-delivery" hint="Added on top, after VAT.">
+          <Input
+            id="pos-delivery"
+            type="number"
+            min="0"
+            step="0.01"
+            value={deliveryFee}
+            onChange={(e) => setDeliveryFee(e.target.value)}
+            placeholder="0.00"
+          />
+        </Field>
+
         <Field label="Discount" htmlFor="pos-discount" hint="Taken off before VAT.">
           <div className="flex items-center gap-2">
             <div className="flex overflow-hidden rounded-md border border-line-strong">
@@ -493,9 +519,15 @@ export function PosTerminal({
               <dd className="text-xs text-muted">Not VAT-registered</dd>
             </div>
           )}
+          {deliveryNum > 0 ? (
+            <div className="flex justify-between">
+              <dt className="text-muted">Delivery fee</dt>
+              <dd className="tabular text-ink-soft">{formatPHP(deliveryFee)}</dd>
+            </div>
+          ) : null}
           <div className="mt-2 flex justify-between border-t border-line pt-2 text-base font-semibold">
             <dt className="text-ink">Total due</dt>
-            <dd className="tabular text-ink">{formatPHP(totals.total)}</dd>
+            <dd className="tabular text-ink">{formatPHP(totalDue)}</dd>
           </div>
         </dl>
 

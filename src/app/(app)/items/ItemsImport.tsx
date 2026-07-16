@@ -22,6 +22,8 @@ interface Preview {
   rows: PreviewRow[];
   toCreate: number;
   toSkip: number;
+  newCategories: number;
+  newUnits: number;
   errorCount: number;
 }
 
@@ -57,19 +59,25 @@ export function ItemsImport() {
   async function commit() {
     setError(null);
     setBusy(true);
-    const result = await api.post<{ itemsCreated: number; skipped: number }>("/api/items/import", {
-      csv,
-      preview: false,
-    });
+    const result = await api.post<{
+      itemsCreated: number;
+      skipped: number;
+      newCategories: number;
+      newUnits: number;
+    }>("/api/items/import", { csv, preview: false });
     setBusy(false);
     if (!result.ok) {
       setError(result.error);
       toast.error(result.error);
       return;
     }
-    toast.success(
-      `${result.data.itemsCreated} item(s) added${result.data.skipped ? `, ${result.data.skipped} skipped (already exist)` : ""}.`,
-    );
+    const { itemsCreated, skipped, newCategories, newUnits } = result.data;
+    const extras = [
+      skipped ? `${skipped} skipped (already exist)` : "",
+      newCategories ? `${newCategories} new categor${newCategories === 1 ? "y" : "ies"}` : "",
+      newUnits ? `${newUnits} new unit(s)` : "",
+    ].filter(Boolean);
+    toast.success(`${itemsCreated} item(s) added${extras.length ? ` — ${extras.join(", ")}` : ""}.`);
     setPreview(null);
     setCsv("");
     setFileName("");
@@ -137,6 +145,17 @@ export function ItemsImport() {
                   hint={preview.errorCount > 0 ? "Fix and re-upload" : "Ready"}
                 />
               </div>
+
+              {preview.newCategories + preview.newUnits > 0 ? (
+                <p className="text-xs text-muted">
+                  New categories/units in the file are created automatically:{" "}
+                  <span className="text-ink-soft">
+                    {preview.newCategories} categor{preview.newCategories === 1 ? "y" : "ies"}, {preview.newUnits}{" "}
+                    unit(s)
+                  </span>
+                  .
+                </p>
+              ) : null}
 
               {preview.errorCount > 0 ? (
                 <p className="rounded-card border border-alert px-4 py-3 text-sm text-alert" role="alert">
