@@ -10,6 +10,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Table, TableWrap, THead, TBody, Th, Tr, Td, EmptyRow } from "@/components/ui/Table";
 import { ExportCsvButton } from "@/components/ui/ExportCsvButton";
 import { PrintButton } from "./PrintButton";
+import { LowStockTable } from "./LowStockTable";
 
 function uomLabel(uom: string): string {
   return UOM_LABELS[uom as keyof typeof UOM_LABELS] ?? uom;
@@ -169,44 +170,7 @@ export default async function ReportsPage() {
             ]}
           />
         </div>
-        <TableWrap>
-          <Table>
-            <THead>
-              <Th>SKU</Th>
-              <Th>Item</Th>
-              <Th numeric>On hand</Th>
-              <Th numeric>Reorder point</Th>
-              <Th numeric>Suggested qty</Th>
-            </THead>
-            <TBody>
-              {lowStock.length === 0 ? (
-                <EmptyRow colSpan={5}>Every item is above its reorder point.</EmptyRow>
-              ) : (
-                lowStock.map((row) => (
-                  <Tr key={row.itemId}>
-                    <Td className="tabular text-ink-soft">{row.sku}</Td>
-                    <Td>
-                      <span className="text-ink">{row.name}</span>
-                      {row.isWeatherSensitive ? (
-                        <span
-                          title="Weather-sensitive — extra buffer during rainy season"
-                          className="ml-2 inline-flex items-center rounded border border-line-strong px-1 text-[10px] font-medium uppercase tracking-wide text-muted"
-                        >
-                          WX
-                        </span>
-                      ) : null}
-                    </Td>
-                    <Td numeric className="text-alert">
-                      {formatQty(row.totalOnHand)} {uomLabel(row.uom)}
-                    </Td>
-                    <Td numeric muted>{formatQty(row.reorderPoint)}</Td>
-                    <Td numeric muted>{formatQty(row.reorderQty)}</Td>
-                  </Tr>
-                ))
-              )}
-            </TBody>
-          </Table>
-        </TableWrap>
+        <LowStockTable rows={lowStock} />
       </section>
 
       <section className="flex flex-col gap-3">

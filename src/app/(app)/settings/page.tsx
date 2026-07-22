@@ -4,9 +4,10 @@ import { companySettings } from "@/db/schema";
 import { requirePermissionPage, can } from "@/lib/auth/dal";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SettingsForm } from "./SettingsForm";
+import { ResetDataPanel } from "./ResetDataPanel";
 
 export default async function SettingsPage() {
-  await requirePermissionPage("settings:read");
+  const user = await requirePermissionPage("settings:read");
   const canWrite = await can("settings:write");
 
   const s = await db.query.companySettings.findFirst({ where: eq(companySettings.id, 1) });
@@ -31,6 +32,8 @@ export default async function SettingsPage() {
       ) : (
         <p className="text-sm text-muted">Company settings have not been configured yet.</p>
       )}
+
+      {user.role === "ADMIN" ? <ResetDataPanel /> : null}
     </>
   );
 }

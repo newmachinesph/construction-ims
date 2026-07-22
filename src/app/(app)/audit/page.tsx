@@ -16,6 +16,8 @@ export default async function AuditPage() {
       action: auditLogs.action,
       entity: auditLogs.entity,
       entityId: auditLogs.entityId,
+      before: auditLogs.before,
+      after: auditLogs.after,
     })
     .from(auditLogs)
     .orderBy(desc(auditLogs.createdAt))

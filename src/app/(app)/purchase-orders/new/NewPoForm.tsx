@@ -7,6 +7,7 @@ import type { VatClass } from "@/db/schema";
 import { api } from "@/components/ui/api";
 import { Button } from "@/components/ui/Button";
 import { Field, FormError, Input, Select, Textarea } from "@/components/ui/Field";
+import { ItemPicker } from "@/components/ui/ItemPicker";
 import { Table, TableWrap, THead, TBody, Th, Tr, Td, EmptyRow } from "@/components/ui/Table";
 import { computeTotals, formatPHP, manilaToday, UOM_LABELS } from "@/lib/ph";
 
@@ -214,15 +215,12 @@ export function NewPoForm({ suppliers, warehouses, projects, items }: NewPoFormP
                   const lineTotal = Number(line.unitPrice || "0") * Number(line.qtyOrdered || "0");
                   return (
                     <Tr key={line.key}>
-                      <Td className="min-w-48">
-                        <Select value={line.itemId} onChange={(e) => handleItemChange(line.key, e.target.value)}>
-                          <option value="">Select item…</option>
-                          {items.map((i) => (
-                            <option key={i.id} value={i.id}>
-                              {i.sku} — {i.name}
-                            </option>
-                          ))}
-                        </Select>
+                      <Td className="min-w-64">
+                        <ItemPicker
+                          items={items}
+                          value={line.itemId}
+                          onSelect={(id) => handleItemChange(line.key, id)}
+                        />
                         {item ? (
                           <p className="mt-1 text-xs text-muted">
                             {UOM_LABELS[item.uom as keyof typeof UOM_LABELS] ?? item.uom}

@@ -458,6 +458,15 @@ export async function listTransfers(limit = 50) {
   });
 }
 
+export async function getTransfer(id: string) {
+  const transfer = await db.query.transfers.findFirst({
+    where: eq(transfers.id, id),
+    with: { fromWarehouse: true, toWarehouse: true, lines: { with: { item: true } } },
+  });
+  if (!transfer) throw new NotFoundError("Transfer");
+  return transfer;
+}
+
 export async function listAdjustments(limit = 50) {
   return db.query.stockAdjustments.findMany({
     orderBy: [desc(stockAdjustments.createdAt)],

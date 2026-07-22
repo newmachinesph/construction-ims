@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { Table, TableWrap, THead, TBody, Th, Tr, Td, EmptyRow } from "@/components/ui/Table";
@@ -51,7 +52,11 @@ export function TransfersTable({ transfers, canReceive }: { transfers: TransferR
             ) : (
               filtered.map((t) => (
                 <Tr key={t.id}>
-                  <Td className="font-medium text-ink">{t.transferNumber}</Td>
+                  <Td className="font-medium">
+                    <Link href={`/transfers/${t.id}`} className="text-ink-soft hover:text-ink hover:underline">
+                      {t.transferNumber}
+                    </Link>
+                  </Td>
                   <Td muted>{t.fromWarehouse.name}</Td>
                   <Td muted>{t.toWarehouse.name}</Td>
                   <Td>

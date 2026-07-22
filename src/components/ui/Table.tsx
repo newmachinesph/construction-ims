@@ -49,8 +49,23 @@ export function TBody({ children }: { children: ReactNode }) {
   );
 }
 
-export function Tr({ children, className }: { children: ReactNode; className?: string }) {
-  return <tr className={cn("border-t border-line transition-colors", className)}>{children}</tr>;
+export function Tr({
+  children,
+  className,
+  onClick,
+}: {
+  children: ReactNode;
+  className?: string;
+  onClick?: () => void;
+}) {
+  return (
+    <tr
+      className={cn("border-t border-line transition-colors", onClick && "cursor-pointer", className)}
+      onClick={onClick}
+    >
+      {children}
+    </tr>
+  );
 }
 
 interface TdProps extends TdHTMLAttributes<HTMLTableCellElement> {

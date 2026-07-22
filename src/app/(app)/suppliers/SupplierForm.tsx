@@ -157,14 +157,22 @@ export function SupplierForm({ mode, supplier, onDone }: SupplierFormProps) {
             ))}
           </Select>
         </Field>
-        <Field label="ATC code" htmlFor={`${mode}-atcCode`}>
+        <Field
+          label="ATC code"
+          htmlFor={`${mode}-atcCode`}
+          hint="BIR Alphanumeric Tax Code for this withholding — e.g. WC158 (services), WC160 (goods)."
+        >
           <Input
             id={`${mode}-atcCode`}
             value={form.atcCode}
             onChange={(e) => setForm({ ...form, atcCode: e.target.value })}
           />
         </Field>
-        <Field label="EWT rate" htmlFor={`${mode}-ewtRate`} hint="Fraction, e.g. 0.0100 = 1%">
+        <Field
+          label="EWT rate"
+          htmlFor={`${mode}-ewtRate`}
+          hint="0.0100 = 1% (goods), 0.0200 = 2% (services/contractors). Leave the default if unsure."
+        >
           <Input
             id={`${mode}-ewtRate`}
             type="number"
@@ -217,15 +225,22 @@ export function SupplierForm({ mode, supplier, onDone }: SupplierFormProps) {
           />
         </Field>
       </div>
-      <label className="flex items-center gap-2 text-sm text-ink-soft">
-        <input
-          type="checkbox"
-          checked={form.ewtApplicable}
-          onChange={(e) => setForm({ ...form, ewtApplicable: e.target.checked })}
-          className="size-4 rounded border-line-strong accent-ink"
-        />
-        Subject to expanded withholding tax
-      </label>
+      <div className="flex flex-col gap-1">
+        <label className="flex items-center gap-2 text-sm text-ink-soft">
+          <input
+            type="checkbox"
+            checked={form.ewtApplicable}
+            onChange={(e) => setForm({ ...form, ewtApplicable: e.target.checked })}
+            className="size-4 rounded border-line-strong accent-ink"
+          />
+          Subject to expanded withholding tax
+        </label>
+        <p className="text-xs text-muted">
+          Expanded Withholding Tax — the % we withhold from this supplier&apos;s payment and remit to the BIR on
+          their behalf. Tick this if we&apos;re required to withhold; the rate and ATC code above set how much and
+          under which tax code.
+        </p>
+      </div>
       {mode === "edit" ? (
         <label className="flex items-center gap-2 text-sm text-ink-soft">
           <input
