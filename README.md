@@ -287,3 +287,9 @@ Not in scope: payroll, accounting GL, DOLE/OSH safety programs, PCAB licensing
 workflow (the firm's PCAB number is a settings field only), and IP-based login
 rate limiting (per-account lockout exists; a distributed credential-stuffing
 throttle does not).
+
+---
+
+## License
+
+MIT. See [LICENSE](LICENSE).
